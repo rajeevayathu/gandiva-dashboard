@@ -5420,5 +5420,243 @@ function scrollRowIntoView(ticker){
   if(row) row.scrollIntoView({block:'nearest'});
 }
 </script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     ALPHAEDGE AI AGENT — floating chat panel, injected at end of body.
+     Zero impact on existing dashboard structure or functionality.
+     Requires server.py running (POST /api/ai/chat).
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<style>
+#ai-fab{
+  position:fixed;bottom:28px;right:28px;z-index:9999;
+  width:52px;height:52px;border-radius:50%;
+  background:linear-gradient(135deg,#6366f1,#8b5cf6);
+  box-shadow:0 4px 20px rgba(99,102,241,.5);
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;border:none;transition:transform .2s,box-shadow .2s;
+  font-size:22px;
+}
+#ai-fab:hover{transform:scale(1.1);box-shadow:0 6px 28px rgba(99,102,241,.7)}
+#ai-fab .ai-fab-badge{
+  position:absolute;top:-4px;right:-4px;
+  background:#22c55e;color:#000;font-size:9px;font-weight:800;
+  padding:2px 5px;border-radius:10px;letter-spacing:.03em;
+}
+#ai-panel{
+  position:fixed;bottom:92px;right:28px;z-index:9998;
+  width:400px;height:520px;
+  background:#161b22;border:1px solid rgba(99,102,241,.35);
+  border-radius:16px;box-shadow:0 12px 48px rgba(0,0,0,.6);
+  display:none;flex-direction:column;overflow:hidden;
+  font-family:'Syne','Inter',system-ui,sans-serif;
+}
+#ai-panel-head{
+  padding:14px 16px;
+  background:linear-gradient(90deg,rgba(99,102,241,.15),rgba(139,92,246,.1));
+  border-bottom:1px solid rgba(99,102,241,.2);
+  display:flex;align-items:center;gap:10px;flex-shrink:0;
+}
+#ai-panel-head .ai-logo{font-size:18px}
+#ai-panel-head .ai-title{font-size:14px;font-weight:700;color:#e2e8f0;flex:1}
+#ai-panel-head .ai-sub{font-size:10px;color:#6e7681}
+#ai-panel-head .ai-close{
+  background:none;border:none;color:#6e7681;font-size:20px;
+  cursor:pointer;padding:0 4px;line-height:1;
+}
+#ai-panel-head .ai-close:hover{color:#e2e8f0}
+#ai-messages{
+  flex:1;overflow-y:auto;padding:14px 14px 6px;
+  display:flex;flex-direction:column;gap:10px;
+}
+#ai-messages::-webkit-scrollbar{width:4px}
+#ai-messages::-webkit-scrollbar-thumb{background:rgba(99,102,241,.3);border-radius:2px}
+.ai-msg{max-width:88%;font-size:12.5px;line-height:1.55;border-radius:12px;padding:9px 13px}
+.ai-msg-user{
+  align-self:flex-end;
+  background:rgba(99,102,241,.2);border:1px solid rgba(99,102,241,.3);
+  color:#c9d1d9;border-bottom-right-radius:3px;
+}
+.ai-msg-bot{
+  align-self:flex-start;
+  background:rgba(22,27,34,.9);border:1px solid rgba(255,255,255,.07);
+  color:#c9d1d9;border-bottom-left-radius:3px;white-space:pre-wrap;
+}
+.ai-msg-bot.ai-loading{color:#6e7681;font-style:italic}
+#ai-tools-bar{
+  padding:4px 14px;display:flex;flex-wrap:wrap;gap:4px;flex-shrink:0;min-height:0;
+}
+.ai-tool-chip{
+  font-size:10px;padding:2px 8px;border-radius:10px;
+  background:rgba(34,197,94,.1);color:#86efac;
+  border:1px solid rgba(34,197,94,.2);white-space:nowrap;
+}
+#ai-input-row{
+  padding:10px 12px;border-top:1px solid rgba(255,255,255,.06);
+  display:flex;gap:8px;flex-shrink:0;align-items:center;
+}
+#ai-input{
+  flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(99,102,241,.25);
+  border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:12.5px;
+  outline:none;font-family:inherit;
+}
+#ai-input:focus{border-color:rgba(99,102,241,.6)}
+#ai-input::placeholder{color:#484f58}
+#ai-send{
+  background:rgba(99,102,241,.8);border:none;border-radius:8px;
+  color:#fff;font-size:13px;padding:8px 14px;cursor:pointer;
+  font-weight:600;transition:background .15s;flex-shrink:0;
+}
+#ai-send:hover{background:#6366f1}
+#ai-send:disabled{background:rgba(99,102,241,.3);cursor:not-allowed}
+.ai-suggestions{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+.ai-sug{
+  font-size:11px;color:#6366f1;cursor:pointer;padding:5px 9px;
+  border-radius:6px;border:1px solid rgba(99,102,241,.2);
+  background:rgba(99,102,241,.05);transition:background .15s;text-align:left;
+}
+.ai-sug:hover{background:rgba(99,102,241,.12)}
+</style>
+
+<!-- Floating button -->
+<button id="ai-fab" onclick="_aiToggle()" title="Ask AlphaEdge AI">
+  ✦
+  <span class="ai-fab-badge">AI</span>
+</button>
+
+<!-- Chat panel -->
+<div id="ai-panel">
+  <div id="ai-panel-head">
+    <span class="ai-logo">✦</span>
+    <div style="flex:1">
+      <div class="ai-title">AlphaEdge AI</div>
+      <div class="ai-sub">Agentic · Llama 3.3 70B · Groq</div>
+    </div>
+    <button class="ai-close" onclick="_aiToggle()">&#10005;</button>
+  </div>
+
+  <div id="ai-messages">
+    <div class="ai-msg ai-msg-bot">
+      Hi! I can analyse your live scan data. Try:
+      <div class="ai-suggestions">
+        <button class="ai-sug" onclick="_aiAsk(this.textContent)">Best 3 F&amp;O setups for today</button>
+        <button class="ai-sug" onclick="_aiAsk(this.textContent)">What's new since yesterday's scan?</button>
+        <button class="ai-sug" onclick="_aiAsk(this.textContent)">Full template stocks with CCI weekly momentum</button>
+        <button class="ai-sug" onclick="_aiAsk(this.textContent)">What is the current market regime?</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="ai-tools-bar"></div>
+
+  <div id="ai-input-row">
+    <input id="ai-input" type="text" placeholder="Ask anything about the scan…"
+      onkeydown="if(event.key==='Enter')_aiSend()">
+    <button id="ai-send" onclick="_aiSend()">Send</button>
+  </div>
+</div>
+
+<script>
+// ── AlphaEdge AI chat — self-contained, no globals polluted ──────────────────
+(function(){
+  var _panel   = null;
+  var _msgs    = null;
+  var _toolsBar= null;
+  var _input   = null;
+  var _sendBtn = null;
+  var _busy    = false;
+
+  function _init(){
+    _panel    = document.getElementById('ai-panel');
+    _msgs     = document.getElementById('ai-messages');
+    _toolsBar = document.getElementById('ai-tools-bar');
+    _input    = document.getElementById('ai-input');
+    _sendBtn  = document.getElementById('ai-send');
+  }
+
+  window._aiToggle = function(){
+    if(!_panel) _init();
+    var open = _panel.style.display === 'flex';
+    _panel.style.display = open ? 'none' : 'flex';
+    if(!open && _input) setTimeout(function(){ _input.focus(); }, 60);
+  };
+
+  window._aiAsk = function(text){
+    if(!_input) _init();
+    _input.value = text;
+    _aiSend();
+  };
+
+  window._aiSend = function(){
+    if(!_panel) _init();
+    var q = (_input.value || '').trim();
+    if(!q || _busy) return;
+
+    // Check server mode
+    if(!_serverMode){
+      _appendMsg('AI requires server mode. Run server.py and open http://localhost:8765', 'bot');
+      return;
+    }
+
+    _input.value = '';
+    _appendMsg(q, 'user');
+    _toolsBar.innerHTML = '';
+    var loadingEl = _appendMsg('Thinking…', 'bot', true);
+    _setbusy(true);
+
+    fetch('/api/ai/chat', {
+      method:  'POST',
+      headers: {'Content-Type': 'application/json'},
+      body:    JSON.stringify({message: q}),
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      loadingEl.remove();
+      _setbusy(false);
+      if(data.error){
+        _appendMsg('Error: ' + data.error, 'bot');
+        return;
+      }
+      // Show tool chips
+      if(data.tools_used && data.tools_used.length){
+        var unique = data.tools_used.filter(function(v,i,a){ return a.indexOf(v)===i; });
+        var labels = {
+          'get_scan_summary':  '📊 Scan summary',
+          'get_market_regime': '🌐 Market regime',
+          'get_screen':        '📋 Screen data',
+          'get_stock_details': '🔍 Stock details',
+          'filter_stocks':     '⚙️ Filter stocks',
+          'get_new_this_scan': '✨ New this scan',
+          'compare_screens':   '🔀 Compare screens',
+        };
+        _toolsBar.innerHTML = unique.map(function(t){
+          return '<span class="ai-tool-chip">'+(labels[t]||t)+'</span>';
+        }).join('');
+      }
+      _appendMsg(data.answer, 'bot');
+    })
+    .catch(function(e){
+      loadingEl.remove();
+      _setbusy(false);
+      _appendMsg('Network error: ' + e.message, 'bot');
+    });
+  };
+
+  function _appendMsg(text, role, loading){
+    if(!_msgs) _init();
+    var div = document.createElement('div');
+    div.className = 'ai-msg ai-msg-' + role + (loading ? ' ai-loading' : '');
+    div.textContent = text;
+    _msgs.appendChild(div);
+    _msgs.scrollTop = _msgs.scrollHeight;
+    return div;
+  }
+
+  function _setbusy(b){
+    _busy = b;
+    if(_sendBtn) _sendBtn.disabled = b;
+    if(_input)   _input.disabled   = b;
+  }
+})();
+</script>
 </body>
 </html>
