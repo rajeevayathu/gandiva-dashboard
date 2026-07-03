@@ -1,0 +1,31 @@
+# ── Generated scan output (rebuilt on every run) ──────────────────────────────
+results.json
+results.js
+results_embed.js
+results_us.json
+results_us_embed.js
+breadth.json
+breadth_embed.js
+cci_history_embed.js
+prev_screens.json
+
+# ── Price data cache (hundreds of MB, rebuilt automatically) ──────────────────
+.cache/
+
+# ── Export downloads ───────────────────────────────────────────────────────────
+exports/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+
+# ── Keep small historical data files ─────────────────────────────────────────
+# cci_history.json  ← tracked (historical CCI trend data, small)
+# screen_history.json ← tracked
