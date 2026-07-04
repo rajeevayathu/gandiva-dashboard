@@ -5620,13 +5620,14 @@ function scrollRowIntoView(ticker){
       if(data.tools_used && data.tools_used.length){
         var unique = data.tools_used.filter(function(v,i,a){ return a.indexOf(v)===i; });
         var labels = {
-          'get_scan_summary':  '📊 Scan summary',
-          'get_market_regime': '🌐 Market regime',
-          'get_screen':        '📋 Screen data',
-          'get_stock_details': '🔍 Stock details',
-          'filter_stocks':     '⚙️ Filter stocks',
-          'get_new_this_scan': '✨ New this scan',
-          'compare_screens':   '🔀 Compare screens',
+          'query_minervini_book': '📖 Minervini book',
+          'get_scan_summary':     '📊 Scan summary',
+          'get_market_regime':    '🌐 Market regime',
+          'get_screen':           '📋 Screen data',
+          'get_stock_details':    '🔍 Stock details',
+          'filter_stocks':        '⚙️ Filter stocks',
+          'get_new_this_scan':    '✨ New this scan',
+          'compare_screens':      '🔀 Compare screens',
         };
         _toolsBar.innerHTML = unique.map(function(t){
           return '<span class="ai-tool-chip">'+(labels[t]||t)+'</span>';

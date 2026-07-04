@@ -29,6 +29,9 @@ env/
 # ── macOS ─────────────────────────────────────────────────────────────────────
 .DS_Store
 
+# ── RAG vector database (large, rebuilt by running build_rag.py) ──────────────
+rag_db/
+
 # ── Keep small historical data files ─────────────────────────────────────────
 # cci_history.json  ← tracked (historical CCI trend data, small)
 # screen_history.json ← tracked

@@ -1,12 +1,11 @@
 """
 AlphaEdge AI Agent — Groq-powered agentic analysis layer for NSE Minervini Scanner.
 
-The agent has 6 tools that read directly from results.json.
-It runs an agentic loop: LLM → decide which tools to call → execute tools →
-feed results back → LLM → more tools if needed → final answer.
+Answers are grounded in TWO sources:
+  1. Live scan data from results.json (real-time NSE screener output)
+  2. RAG over "Trade Like a Stock Market Wizard" by Mark Minervini (local ChromaDB)
 
-No data is sent to external servers except the scan summary/stock data
-sent to Groq for LLM inference.
+No data is sent to external servers except scan context sent to Groq for inference.
 """
 import json
 import os
@@ -14,6 +13,57 @@ import re
 
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 RESULTS_JSON = os.path.join(BASE_DIR, 'results.json')
+RAG_DB       = os.path.join(BASE_DIR, 'rag_db')
+
+# ── RAG retriever (lazy-loaded on first use) ──────────────────────────────────
+_rag_collection  = None
+_rag_embed_model = None
+
+def _get_rag():
+    global _rag_collection, _rag_embed_model
+    if _rag_collection is not None:
+        return _rag_collection, _rag_embed_model
+    if not os.path.exists(RAG_DB):
+        return None, None
+    try:
+        import chromadb
+        from sentence_transformers import SentenceTransformer
+        client = chromadb.PersistentClient(path=RAG_DB)
+        _rag_collection  = client.get_collection('minervini_books')
+        _rag_embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+    except Exception:
+        return None, None
+    return _rag_collection, _rag_embed_model
+
+
+def _query_rag(query: str, n: int = 4) -> list[dict]:
+    """Return top-n relevant passages from the Minervini book."""
+    collection, model = _get_rag()
+    if collection is None or model is None:
+        return []
+    try:
+        embedding = model.encode([query]).tolist()
+        results   = collection.query(
+            query_embeddings=embedding,
+            n_results=n,
+            include=['documents', 'metadatas', 'distances'],
+        )
+        passages = []
+        for doc, meta, dist in zip(
+            results['documents'][0],
+            results['metadatas'][0],
+            results['distances'][0],
+        ):
+            if dist < 0.7:   # cosine distance < 0.7 = meaningful relevance
+                passages.append({
+                    'text':  doc,
+                    'book':  meta.get('book', ''),
+                    'page':  meta.get('page', ''),
+                    'score': round(1 - dist, 3),
+                })
+        return passages
+    except Exception:
+        return []
 
 # ── Screen label map ──────────────────────────────────────────────────────────
 SCREEN_LABELS = {
@@ -410,7 +460,7 @@ def _build_context(user_message: str) -> tuple[str, list[str]]:
             parts.append("NEW THIS SCAN: none (or no previous baseline)")
 
     # ── F&O / best setups ─────────────────────────────────────────────────────
-    if any(w in q for w in ['fo', 'f&o', 'fno', 'best', 'setup', 'trade', 'buy', 'pick']):
+    if any(w in q for w in ['fo', 'f&o', 'fno', 'best', 'setup', 'trade', 'buy', 'pick', 'vcp', 'breakout', 'entry']):
         tools.append('filter_stocks')
         fo = screens.get('fo_strong_uptrend', {}).get('stocks', [])[:15]
         ck_daily  = {_ticker(s) for s in screens.get('ck_daily_100',  {}).get('stocks', [])}
@@ -467,6 +517,27 @@ def _build_context(user_message: str) -> tuple[str, list[str]]:
                 f"  Earnings EPS yoy: {detail.get('q_eps_yoy')}  Rev yoy: {detail.get('q_rev_yoy')}"
             )
 
+    # ── VCP setups ────────────────────────────────────────────────────────────
+    if any(w in q for w in ['vcp', 'volatility contraction', 'breakout', 'pattern']):
+        tools.append('get_screen')
+        ck_daily  = {_ticker(s) for s in screens.get('ck_daily_100',  {}).get('stocks', [])}
+        ck_weekly = {_ticker(s) for s in screens.get('ck_weekly_100', {}).get('stocks', [])}
+        vcp_stocks = screens.get('vcp_setup', {}).get('stocks', [])[:15]
+        rows = []
+        for s in vcp_stocks:
+            t  = _ticker(s)
+            cd = '✓' if t in ck_daily  else '✗'
+            cw = '✓' if t in ck_weekly else '✗'
+            vd = 'daily'  if s.get('vcp_last_daily')  else ''
+            vw = 'weekly' if s.get('vcp_last_weekly') else ''
+            rows.append(
+                f"  {t:15} RS:{s.get('rs_rank','-'):>3}  "
+                f"CCId:{cd} CCIw:{cw}  "
+                f"VCP:{'/'.join(filter(None,[vd,vw]))}  "
+                f"%hi:{s.get('pct_from_high','-')}"
+            )
+        parts.append("VCP SETUP STOCKS (top 15):\n" + ('\n'.join(rows) if rows else '  (none)'))
+
     # ── CCI momentum / compare ─────────────────────────────────────────────────
     if any(w in q for w in ['cci', 'momentum', 'mtf', 'multi']):
         tools.append('compare_screens')
@@ -494,37 +565,54 @@ def _build_context(user_message: str) -> tuple[str, list[str]]:
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are AlphaEdge AI, an expert NSE India equity analyst embedded in the AlphaEdge Minervini Scanner dashboard.
 
-Live scan data is provided below. Use it to give precise, data-backed answers.
-
-Domain knowledge:
-- Minervini SEPA: C1–C8 = 8 structural criteria. C1–C6 = Stage 2 base. Full Template = all 8 met.
-- VCP (Volatility Contraction Pattern) = ideal entry trigger for swing trades. Daily VCP > Weekly VCP.
-- CCI34 ≥ 100 daily + weekly (MTF) = strongest momentum confirmation signal.
-- RS Rank = relative strength vs NSE universe. 85+ = leader, 70+ = solid, below 60 = avoid.
-- F&O stocks: can trade futures/options. Prefer Full Template + CCI momentum + low %from-high.
-- Regime: BULL → full risk; CAUTION → half size; BEAR → cash.
-- %from high: closer to 0% = near breakout zone (best entry). Negative means below 52w high.
+You answer from TWO sources provided below:
+  1. MINERVINI BOOK EXCERPTS — exact passages from "Trade Like a Stock Market Wizard" by Mark Minervini
+  2. LIVE SCAN DATA — real-time NSE screener output from today's scan
 
 Response rules:
-1. Always cite specific tickers from the data — never make up names.
-2. For "best setups": rank by VCP ✓ > CCI daily+weekly ✓ > RS rank high > small %from high.
-3. Keep answers concise: bullet list for stocks, 2–3 sentences max for explanations.
-4. Mention current regime when recommending trades.
-5. If a ticker isn't in the data, say so — never guess."""
+1. Always ground explanations in Minervini's book when relevant — quote or paraphrase specific concepts.
+2. Always link book concepts to actual live stocks from the scan data.
+3. For "best setups": rank by VCP ✓ > CCI daily+weekly ✓ > RS rank > small %from-high.
+4. Cite book page numbers when referencing specific concepts (e.g. "As Minervini explains on page 47...").
+5. Always mention current market regime when recommending trades.
+6. Never make up tickers — only use stocks from the live scan data.
+7. Keep answers focused: bullet points for stock lists, brief paragraphs for concepts."""
 
 
-# ── AGENTIC LOOP (context-stuffed, model-agnostic) ───────────────────────────
+# ── AGENTIC LOOP (RAG + context-stuffed) ─────────────────────────────────────
 def run_agent(user_message: str, api_key: str) -> tuple:
     """
-    Answer using pre-built scan context. Returns (answer: str, tools_used: list[str]).
+    Answer using Minervini RAG + live scan context.
+    Returns (answer: str, tools_used: list[str]).
     """
     from groq import Groq
     client = Groq(api_key=api_key)
 
-    context, tools_used = _build_context(user_message)
+    # 1. Retrieve relevant Minervini book passages
+    passages   = _query_rag(user_message, n=4)
+    tools_used = []
+
+    rag_section = ''
+    if passages:
+        tools_used.append('query_minervini_book')
+        lines = []
+        for p in passages:
+            lines.append(
+                f'[Page {p["page"]} | relevance {p["score"]}]\n"{p["text"]}"'
+            )
+        rag_section = '--- MINERVINI BOOK EXCERPTS ---\n' + '\n\n'.join(lines)
+    else:
+        rag_section = '--- MINERVINI BOOK EXCERPTS ---\n(RAG index not found — run build_rag.py)'
+
+    # 2. Build live scan context
+    scan_context, scan_tools = _build_context(user_message)
+    tools_used.extend(scan_tools)
+
+    # 3. Compose prompt: book excerpts first, then live data
+    full_context = rag_section + '\n\n' + '--- LIVE SCAN DATA ---\n' + scan_context
 
     messages = [
-        {'role': 'system', 'content': SYSTEM_PROMPT + '\n\n--- LIVE SCAN DATA ---\n' + context},
+        {'role': 'system', 'content': SYSTEM_PROMPT + '\n\n' + full_context},
         {'role': 'user',   'content': user_message},
     ]
 
@@ -536,4 +624,4 @@ def run_agent(user_message: str, api_key: str) -> tuple:
     )
 
     answer = (resp.choices[0].message.content or '').strip()
-    return answer, tools_used
+    return answer, list(dict.fromkeys(tools_used))
