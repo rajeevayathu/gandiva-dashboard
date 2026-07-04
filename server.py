@@ -152,6 +152,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path == '/api/scan':
             started = trigger_scan()
             self._send_json({'status': 'started' if started else 'already_running'})
+        elif self.path == '/api/ai/stream':
+            self._handle_ai_stream()
         elif self.path == '/api/ai/chat':
             self._handle_ai_chat()
         elif self.path == '/api/save-csv':
@@ -173,6 +175,40 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
     # ── API helpers ───────────────────────────────────────────────────────────
+    def _handle_ai_stream(self):
+        """Server-Sent Events streaming endpoint — tokens appear word by word."""
+        if not GROQ_API_KEY:
+            self._send_json({'error': 'GROQ_API_KEY not set in .env file'}, status=500)
+            return
+        try:
+            length  = int(self.headers.get('Content-Length', 0))
+            body    = json.loads(self.rfile.read(length))
+            message = (body.get('message') or '').strip()
+            if not message:
+                self._send_json({'error': 'Empty message'}, status=400)
+                return
+
+            self.send_response(200)
+            self.send_header('Content-Type',  'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection',    'keep-alive')
+            self._cors()
+            self.end_headers()
+
+            from ai_agent import run_agent_stream
+            for event in run_agent_stream(message, GROQ_API_KEY):
+                line = f'data: {json.dumps(event)}\n\n'
+                self.wfile.write(line.encode())
+                self.wfile.flush()
+
+        except Exception as e:
+            try:
+                err = f'data: {json.dumps({"type":"error","text":str(e)})}\n\n'
+                self.wfile.write(err.encode())
+                self.wfile.flush()
+            except Exception:
+                pass
+
     def _handle_ai_chat(self):
         if not GROQ_API_KEY:
             self._send_json({'error': 'GROQ_API_KEY not set in .env file'}, status=500)

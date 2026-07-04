@@ -5586,12 +5586,23 @@ function scrollRowIntoView(ticker){
     _aiSend();
   };
 
+  var _TOOL_LABELS = {
+    'query_minervini_book': '📖 Minervini book',
+    'query_scan_history':   '📅 Scan history',
+    'get_scan_summary':     '📊 Scan summary',
+    'get_market_regime':    '🌐 Market regime',
+    'get_screen':           '📋 Screen data',
+    'get_stock_details':    '🔍 Stock details',
+    'filter_stocks':        '⚙️ Filter stocks',
+    'get_new_this_scan':    '✨ New this scan',
+    'compare_screens':      '🔀 Compare screens',
+  };
+
   window._aiSend = function(){
     if(!_panel) _init();
     var q = (_input.value || '').trim();
     if(!q || _busy) return;
 
-    // Check server mode
     if(!_serverMode){
       _appendMsg('AI requires server mode. Run server.py and open http://localhost:8765', 'bot');
       return;
@@ -5600,46 +5611,77 @@ function scrollRowIntoView(ticker){
     _input.value = '';
     _appendMsg(q, 'user');
     _toolsBar.innerHTML = '';
-    var loadingEl = _appendMsg('Thinking…', 'bot', true);
     _setbusy(true);
 
-    fetch('/api/ai/chat', {
+    // Create the bot message div that we'll stream into
+    var botDiv = document.createElement('div');
+    botDiv.className = 'ai-msg ai-msg-bot ai-loading';
+    botDiv.textContent = '▍';   // blinking cursor placeholder
+    _msgs.appendChild(botDiv);
+    _msgs.scrollTop = _msgs.scrollHeight;
+
+    var fullText = '';
+    var started  = false;
+
+    fetch('/api/ai/stream', {
       method:  'POST',
       headers: {'Content-Type': 'application/json'},
       body:    JSON.stringify({message: q}),
     })
-    .then(function(r){ return r.json(); })
-    .then(function(data){
-      loadingEl.remove();
-      _setbusy(false);
-      if(data.error){
-        _appendMsg('Error: ' + data.error, 'bot');
-        return;
+    .then(function(response) {
+      var reader  = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer  = '';
+
+      function pump() {
+        return reader.read().then(function(result) {
+          if(result.done) {
+            _setbusy(false);
+            botDiv.classList.remove('ai-loading');
+            // Remove trailing cursor if present
+            if(botDiv.textContent.endsWith('▍'))
+              botDiv.textContent = botDiv.textContent.slice(0,-1);
+            return;
+          }
+
+          buffer += decoder.decode(result.value, {stream: true});
+          var lines = buffer.split('\n');
+          buffer = lines.pop(); // keep incomplete line
+
+          lines.forEach(function(line) {
+            if(!line.startsWith('data: ')) return;
+            try {
+              var evt = JSON.parse(line.slice(6));
+              if(evt.type === 'tools' && evt.tools && evt.tools.length) {
+                var unique = evt.tools.filter(function(v,i,a){return a.indexOf(v)===i;});
+                _toolsBar.innerHTML = unique.map(function(t){
+                  return '<span class="ai-tool-chip">'+(_TOOL_LABELS[t]||t)+'</span>';
+                }).join('');
+              } else if(evt.type === 'chunk') {
+                if(!started){
+                  botDiv.textContent = '';   // clear cursor
+                  started = true;
+                }
+                fullText += evt.text;
+                botDiv.textContent = fullText + '▍';
+                _msgs.scrollTop = _msgs.scrollHeight;
+              } else if(evt.type === 'error') {
+                botDiv.textContent = 'Error: ' + evt.text;
+                botDiv.classList.remove('ai-loading');
+                _setbusy(false);
+              }
+            } catch(e) {}
+          });
+
+          return pump();
+        });
       }
-      // Show tool chips
-      if(data.tools_used && data.tools_used.length){
-        var unique = data.tools_used.filter(function(v,i,a){ return a.indexOf(v)===i; });
-        var labels = {
-          'query_minervini_book': '📖 Minervini book',
-          'query_scan_history':   '📅 Scan history',
-          'get_scan_summary':     '📊 Scan summary',
-          'get_market_regime':    '🌐 Market regime',
-          'get_screen':           '📋 Screen data',
-          'get_stock_details':    '🔍 Stock details',
-          'filter_stocks':        '⚙️ Filter stocks',
-          'get_new_this_scan':    '✨ New this scan',
-          'compare_screens':      '🔀 Compare screens',
-        };
-        _toolsBar.innerHTML = unique.map(function(t){
-          return '<span class="ai-tool-chip">'+(labels[t]||t)+'</span>';
-        }).join('');
-      }
-      _appendMsg(data.answer, 'bot');
+      return pump();
     })
-    .catch(function(e){
-      loadingEl.remove();
+    .catch(function(e) {
+      botDiv.textContent = 'Network error: ' + e.message;
+      botDiv.classList.remove('ai-loading');
       _setbusy(false);
-      _appendMsg('Network error: ' + e.message, 'bot');
     });
   };
 

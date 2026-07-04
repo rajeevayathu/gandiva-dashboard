@@ -966,49 +966,64 @@ MINERVINI'S VCP CHECKLIST (from the book):
 - CCI momentum: institutional accumulation footprint visible in CCI34 ≥ 100"""
 
 
-# ── AGENTIC LOOP (RAG + context-stuffed) ─────────────────────────────────────
-def run_agent(user_message: str, api_key: str) -> tuple:
-    """
-    Answer using Minervini RAG + live scan context.
-    Returns (answer: str, tools_used: list[str]).
-    """
-    from groq import Groq
-    client = Groq(api_key=api_key)
-
-    # 1. Retrieve relevant Minervini book passages
+# ── SHARED PROMPT BUILDER ─────────────────────────────────────────────────────
+def _build_messages(user_message: str) -> tuple[list[dict], list[str]]:
+    """Build the full prompt messages list and tools_used. Shared by both modes."""
     passages   = _query_rag(user_message, n=4)
     tools_used = []
 
-    rag_section = ''
     if passages:
         tools_used.append('query_minervini_book')
-        lines = []
-        for p in passages:
-            lines.append(
-                f'[Page {p["page"]} | relevance {p["score"]}]\n"{p["text"]}"'
-            )
+        lines = [f'[Page {p["page"]} | relevance {p["score"]}]\n"{p["text"]}"' for p in passages]
         rag_section = '--- MINERVINI BOOK EXCERPTS ---\n' + '\n\n'.join(lines)
     else:
         rag_section = '--- MINERVINI BOOK EXCERPTS ---\n(RAG index not found — run build_rag.py)'
 
-    # 2. Build live scan context
     scan_context, scan_tools = _build_context(user_message)
     tools_used.extend(scan_tools)
 
-    # 3. Compose prompt: book excerpts first, then live data
-    full_context = rag_section + '\n\n' + '--- LIVE SCAN DATA ---\n' + scan_context
-
+    full_context = rag_section + '\n\n--- LIVE SCAN DATA ---\n' + scan_context
     messages = [
         {'role': 'system', 'content': SYSTEM_PROMPT + '\n\n' + full_context},
         {'role': 'user',   'content': user_message},
     ]
+    return messages, list(dict.fromkeys(tools_used))
 
-    resp = client.chat.completions.create(
-        model       = 'llama-3.3-70b-versatile',
-        messages    = messages,
-        max_tokens  = 1024,
-        temperature = 0.2,
+
+# ── STANDARD (non-streaming) ──────────────────────────────────────────────────
+def run_agent(user_message: str, api_key: str) -> tuple:
+    """Returns (answer: str, tools_used: list[str])."""
+    from groq import Groq
+    client   = Groq(api_key=api_key)
+    messages, tools_used = _build_messages(user_message)
+    resp   = client.chat.completions.create(
+        model='llama-3.3-70b-versatile', messages=messages,
+        max_tokens=1024, temperature=0.2,
     )
+    return (resp.choices[0].message.content or '').strip(), tools_used
 
-    answer = (resp.choices[0].message.content or '').strip()
-    return answer, list(dict.fromkeys(tools_used))
+
+# ── STREAMING ─────────────────────────────────────────────────────────────────
+def run_agent_stream(user_message: str, api_key: str):
+    """
+    Generator that yields dicts:
+      {'type': 'tools',  'tools': [...]}   — emitted first
+      {'type': 'chunk',  'text':  '...'}   — one per token
+      {'type': 'done'}                     — emitted last
+    """
+    from groq import Groq
+    client   = Groq(api_key=api_key)
+    messages, tools_used = _build_messages(user_message)
+
+    yield {'type': 'tools', 'tools': tools_used}
+
+    stream = client.chat.completions.create(
+        model='llama-3.3-70b-versatile', messages=messages,
+        max_tokens=1024, temperature=0.2, stream=True,
+    )
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield {'type': 'chunk', 'text': delta}
+
+    yield {'type': 'done'}
