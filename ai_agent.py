@@ -65,6 +65,158 @@ def _query_rag(query: str, n: int = 4) -> list[dict]:
     except Exception:
         return []
 
+# ── Minervini-style VCP validator ─────────────────────────────────────────────
+def _validate_vcp_minervini(stocks: list, screens: dict) -> list:
+    """
+    Apply Minervini's actual criteria to filter and score VCP candidates.
+
+    A true Minervini VCP requires (from the book):
+      ✓ Stage 2 uptrend — C1–C6 all confirmed (structural prerequisite)
+      ✓ RS rank ≥ 80 — must be a relative strength leader
+      ✓ Tight base — within 12% of 52-week high (base forming near highs)
+      ✓ Volume contraction — vol_ratio < 1.0 ideally (volume drying up in base)
+      ✓ Momentum — CCI daily ≥ 100 preferred (institutional accumulation)
+      ✓ VCP flag from scanner — algorithmic contraction detection
+      ✓ Near key MAs — price close to EMA21 or MA50 (not extended)
+
+    Returns validated candidates with a quality score and reasoning.
+    """
+    ck_daily  = {_ticker(s) for s in screens.get('ck_daily_100',  {}).get('stocks', [])}
+    ck_weekly = {_ticker(s) for s in screens.get('ck_weekly_100', {}).get('stocks', [])}
+    full_tmpl = {_ticker(s) for s in screens.get('full_template', {}).get('stocks', [])}
+    c1_to_c6  = {_ticker(s) for s in screens.get('c1_to_c6',     {}).get('stocks', [])}
+
+    validated = []
+    for s in stocks:
+        t   = _ticker(s)
+        cr  = s.get('criteria') or {}
+        rs  = s.get('rs_rank') or 0
+        pct_hi   = s.get('pct_from_high') or -999
+        vol      = s.get('vol_ratio') or 1.0
+        pct_ma50 = s.get('pct_from_ma50') or 999
+        pct_e21  = s.get('pct_from_ema21') or 999
+        vcp_d    = bool(s.get('vcp_last_daily'))
+        vcp_w    = bool(s.get('vcp_last_weekly'))
+
+        passes  = []
+        fails   = []
+        score   = 0
+
+        # ── C1–C6: Stage 2 structural base (MANDATORY) ──────────────────────
+        c1_c6_ok = all(cr.get(f'c{i}') for i in range(1, 7))
+        if c1_c6_ok:
+            passes.append('C1–C6 ✓ Stage 2 base confirmed')
+            score += 30
+        else:
+            failed_cs = [f'C{i}' for i in range(1,7) if not cr.get(f'c{i}')]
+            fails.append(f'Stage 2 incomplete — {", ".join(failed_cs)} not met (DISQUALIFIED)')
+            # Hard disqualify — Minervini never buys outside Stage 2
+            validated.append({'ticker': t, 'score': 0, 'grade': 'FAIL',
+                              'passes': passes, 'fails': fails, 'data': s})
+            continue
+
+        # ── RS Rank ≥ 80 ────────────────────────────────────────────────────
+        if rs >= 90:
+            passes.append(f'RS {rs} — top-tier leader (≥90)')
+            score += 20
+        elif rs >= 80:
+            passes.append(f'RS {rs} — strong leader (≥80)')
+            score += 12
+        elif rs >= 70:
+            passes.append(f'RS {rs} — acceptable but not ideal (<80)')
+            fails.append('RS below 80 — Minervini prefers 80+ for VCP entries')
+            score += 5
+        else:
+            fails.append(f'RS {rs} — too weak; Minervini avoids RS < 70')
+            score -= 10
+
+        # ── Tightness of base (% from 52-week high) ─────────────────────────
+        if pct_hi >= -5:
+            passes.append(f'Tight base: {pct_hi:.1f}% from 52w high — breakout zone')
+            score += 20
+        elif pct_hi >= -10:
+            passes.append(f'Base: {pct_hi:.1f}% from 52w high — acceptable')
+            score += 10
+        elif pct_hi >= -15:
+            fails.append(f'Base loose: {pct_hi:.1f}% from high — getting extended')
+            score += 3
+        else:
+            fails.append(f'Base too wide: {pct_hi:.1f}% from high — not a VCP (>15% is a correction, not contraction)')
+            score -= 15
+
+        # ── Volume contraction (drying up in base) ───────────────────────────
+        if vol < 0.7:
+            passes.append(f'Volume drying up: vol ratio {vol:.2f} — institutional sellers absent')
+            score += 15
+        elif vol < 1.0:
+            passes.append(f'Volume subdued: vol ratio {vol:.2f} — base forming quietly')
+            score += 8
+        elif vol < 1.5:
+            fails.append(f'Volume elevated: {vol:.2f}× avg — should be drying up in a VCP base')
+        else:
+            fails.append(f'Volume too high: {vol:.2f}× avg — distribution possible, not accumulation')
+            score -= 10
+
+        # ── CCI momentum (institutional footprint) ───────────────────────────
+        if t in ck_daily and t in ck_weekly:
+            passes.append('CCI daily + weekly ≥100 — multi-TF momentum confirmation')
+            score += 15
+        elif t in ck_daily:
+            passes.append('CCI daily ≥100 — daily momentum present')
+            score += 8
+        elif t in ck_weekly:
+            passes.append('CCI weekly ≥100 — weekly trend strong')
+            score += 5
+        else:
+            fails.append('No CCI signal — momentum not confirmed on either timeframe')
+
+        # ── VCP scanner flag ─────────────────────────────────────────────────
+        if vcp_d and vcp_w:
+            passes.append('VCP detected daily + weekly — multi-TF contraction pattern')
+            score += 10
+        elif vcp_d:
+            passes.append('VCP detected on daily — contraction pattern on primary timeframe')
+            score += 7
+        elif vcp_w:
+            passes.append('VCP detected on weekly — longer-term base')
+            score += 4
+        else:
+            fails.append('Scanner did not flag VCP — may be false from raw screen')
+
+        # ── Proximity to moving averages (not overextended) ──────────────────
+        if abs(pct_e21) <= 5:
+            passes.append(f'Price near EMA21 ({pct_e21:+.1f}%) — tight to trend')
+            score += 5
+        elif abs(pct_ma50) <= 8:
+            passes.append(f'Price near MA50 ({pct_ma50:+.1f}%) — pulling back to support')
+            score += 3
+        elif pct_e21 > 15:
+            fails.append(f'Extended {pct_e21:.1f}% above EMA21 — too extended for safe VCP entry')
+            score -= 8
+
+        # ── Grade ────────────────────────────────────────────────────────────
+        if score >= 80:
+            grade = 'A — Minervini-quality VCP'
+        elif score >= 60:
+            grade = 'B — Good setup, verify chart'
+        elif score >= 40:
+            grade = 'C — Marginal, needs confirmation'
+        else:
+            grade = 'D — Does not meet VCP criteria'
+
+        validated.append({
+            'ticker': t, 'score': score, 'grade': grade,
+            'passes': passes, 'fails': fails,
+            'rs': rs, 'pct_hi': pct_hi, 'vol': vol,
+            'vcp_daily': vcp_d, 'vcp_weekly': vcp_w,
+            'cci_daily': t in ck_daily, 'cci_weekly': t in ck_weekly,
+            'data': s,
+        })
+
+    validated.sort(key=lambda x: -x['score'])
+    return validated
+
+
 # ── Screen label map ──────────────────────────────────────────────────────────
 SCREEN_LABELS = {
     'full_template':        'Full Template (all 8 criteria)',
@@ -517,26 +669,71 @@ def _build_context(user_message: str) -> tuple[str, list[str]]:
                 f"  Earnings EPS yoy: {detail.get('q_eps_yoy')}  Rev yoy: {detail.get('q_rev_yoy')}"
             )
 
-    # ── VCP setups ────────────────────────────────────────────────────────────
-    if any(w in q for w in ['vcp', 'volatility contraction', 'breakout', 'pattern']):
+    # ── VCP setups — scan ALL screens, validate like Minervini ───────────────
+    if any(w in q for w in ['vcp', 'volatility contraction', 'breakout', 'pattern',
+                             'setup', 'best', 'pick', 'trade', 'buy', 'entry']):
         tools.append('get_screen')
-        ck_daily  = {_ticker(s) for s in screens.get('ck_daily_100',  {}).get('stocks', [])}
-        ck_weekly = {_ticker(s) for s in screens.get('ck_weekly_100', {}).get('stocks', [])}
-        vcp_stocks = screens.get('vcp_setup', {}).get('stocks', [])[:15]
+
+        # Collect every unique stock across ALL screens — VCPs can appear anywhere
+        _ALL_SCREENS = [
+            'full_template', 'near_breakout', 'vcp_setup', 'c1_to_c6',
+            'watch_list', 'fo_strong_uptrend', 'ma_pullback', 'hhhl_pullback',
+            'ck_daily_100', 'ck_weekly_100', 'ck_mtf_100', 'cci34_best_setups',
+            'rs_leaders', 'strong_earnings', 'new_highs', 'newly_added',
+        ]
+        seen, all_stocks = set(), []
+        stock_screens = {}   # ticker → list of screens it appears in
+        for scr_key in _ALL_SCREENS:
+            scr_label = SCREEN_LABELS.get(scr_key, scr_key)
+            for s in screens.get(scr_key, {}).get('stocks', []):
+                t = _ticker(s)
+                if not t:
+                    continue
+                stock_screens.setdefault(t, []).append(scr_label)
+                if t not in seen:
+                    seen.add(t)
+                    all_stocks.append(s)
+
+        # Run every stock through Minervini's VCP validator
+        validated = _validate_vcp_minervini(all_stocks, screens)
+
+        # Attach which screens each stock appears in
+        for v in validated:
+            v['appears_in'] = stock_screens.get(v['ticker'], [])
+
+        grade_a = [v for v in validated if v['score'] >= 80]
+        grade_b = [v for v in validated if 60 <= v['score'] < 80]
+        disq    = [v for v in validated if 'DISQUALIFIED' in ' '.join(v.get('fails', []))]
+
         rows = []
-        for s in vcp_stocks:
-            t  = _ticker(s)
-            cd = '✓' if t in ck_daily  else '✗'
-            cw = '✓' if t in ck_weekly else '✗'
-            vd = 'daily'  if s.get('vcp_last_daily')  else ''
-            vw = 'weekly' if s.get('vcp_last_weekly') else ''
+        rows.append(f"  Scanned {len(all_stocks)} unique stocks across {len(_ALL_SCREENS)} screens.")
+        rows.append(f"  Result: {len(grade_a)} Grade-A | {len(grade_b)} Grade-B | {len(disq)} disqualified (Stage 2 failed)\n")
+
+        for v in grade_a[:10]:
+            scrs = ', '.join(dict.fromkeys(v['appears_in']))   # deduplicated screen list
             rows.append(
-                f"  {t:15} RS:{s.get('rs_rank','-'):>3}  "
-                f"CCId:{cd} CCIw:{cw}  "
-                f"VCP:{'/'.join(filter(None,[vd,vw]))}  "
-                f"%hi:{s.get('pct_from_high','-')}"
+                f"  ★ {v['ticker']:15} RS:{v['rs']:>3}  "
+                f"Base:{v['pct_hi']:+.1f}%  Vol:{v['vol']:.2f}x  "
+                f"CCId:{'✓' if v['cci_daily'] else '✗'} CCIw:{'✓' if v['cci_weekly'] else '✗'}  "
+                f"VCP:{'D' if v['vcp_daily'] else ''}{'W' if v['vcp_weekly'] else ''}  "
+                f"Score:{v['score']}  [{v['grade']}]"
             )
-        parts.append("VCP SETUP STOCKS (top 15):\n" + ('\n'.join(rows) if rows else '  (none)'))
+            rows.append(f"     Found in: {scrs}")
+            rows.append(f"     PASSES: {' | '.join(v['passes'])}")
+            if v['fails']:
+                rows.append(f"     NOTES:  {' | '.join(v['fails'])}")
+
+        for v in grade_b[:5]:
+            scrs = ', '.join(dict.fromkeys(v['appears_in']))
+            rows.append(
+                f"  ◐ {v['ticker']:15} RS:{v['rs']:>3}  "
+                f"Base:{v['pct_hi']:+.1f}%  Score:{v['score']}  [{v['grade']}]  "
+                f"Found in: {scrs}"
+            )
+            if v['fails']:
+                rows.append(f"     CAUTION: {' | '.join(v['fails'])}")
+
+        parts.append("MINERVINI VCP VALIDATION (full dashboard scan):\n" + '\n'.join(rows))
 
     # ── CCI momentum / compare ─────────────────────────────────────────────────
     if any(w in q for w in ['cci', 'momentum', 'mtf', 'multi']):
@@ -563,20 +760,31 @@ def _build_context(user_message: str) -> tuple[str, list[str]]:
 
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are AlphaEdge AI, an expert NSE India equity analyst embedded in the AlphaEdge Minervini Scanner dashboard.
+SYSTEM_PROMPT = """You are AlphaEdge AI — you think and analyse exactly like Mark Minervini himself.
 
-You answer from TWO sources provided below:
-  1. MINERVINI BOOK EXCERPTS — exact passages from "Trade Like a Stock Market Wizard" by Mark Minervini
-  2. LIVE SCAN DATA — real-time NSE screener output from today's scan
+You have TWO sources to work from:
+  1. MINERVINI BOOK EXCERPTS — exact passages from "Trade Like a Stock Market Wizard"
+  2. MINERVINI VCP VALIDATION — pre-scored candidates using Minervini's actual criteria
 
-Response rules:
-1. Always ground explanations in Minervini's book when relevant — quote or paraphrase specific concepts.
-2. Always link book concepts to actual live stocks from the scan data.
-3. For "best setups": rank by VCP ✓ > CCI daily+weekly ✓ > RS rank > small %from-high.
-4. Cite book page numbers when referencing specific concepts (e.g. "As Minervini explains on page 47...").
-5. Always mention current market regime when recommending trades.
-6. Never make up tickers — only use stocks from the live scan data.
-7. Keep answers focused: bullet points for stock lists, brief paragraphs for concepts."""
+Your job is NOT to list stocks from a screen. Your job is to REASON like Minervini:
+
+CRITICAL RULES:
+1. Only recommend Grade-A stocks (score ≥ 80) for actual trades. Be strict — Minervini himself says he waits for the best setups.
+2. Explain WHY each stock qualifies using specific Minervini concepts from the book (cite page numbers).
+3. Call out what's MISSING for lower-grade stocks — e.g. "Volume has not dried up enough per page 218's criteria."
+4. NEVER recommend a stock that failed Stage 2 (C1–C6 not met) — Minervini never buys outside Stage 2.
+5. Be honest about limitations: "I can see quantitative data but cannot see the actual price chart — you must visually verify the contraction symmetry before entering."
+6. Always state the current regime and what it means for position sizing.
+7. If no Grade-A stocks exist today, say so clearly — "There are no stocks meeting Minervini's full VCP criteria today. Wait for better setups."
+
+MINERVINI'S VCP CHECKLIST (from the book):
+- Stage 2 uptrend: price above rising MA200, MA200 > MA150 > MA50 (C1–C6 all met)
+- RS leader: RS rank ≥ 80 — only buy the strongest stocks in the market
+- Tight base: price within 10–12% of 52-week high — base forming near highs, not in a hole
+- Volume contraction: volume must DRY UP in the base — fewer sellers each contraction
+- Contraction symmetry: each swing smaller than the last (2–4 contractions typical)
+- Pivot point: clear breakout level with volume expansion expected on breakout
+- CCI momentum: institutional accumulation footprint visible in CCI34 ≥ 100"""
 
 
 # ── AGENTIC LOOP (RAG + context-stuffed) ─────────────────────────────────────
