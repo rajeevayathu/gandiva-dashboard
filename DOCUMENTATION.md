@@ -925,7 +925,7 @@ Free tier with no credit card required. For a personal portfolio project running
 | ✅ | Book RAG (Trade Like a Stock Market Wizard) | Complete | build_rag.py, ai_agent.py |
 | ✅ | Scan History RAG (temporal queries) | Complete | build_history_rag.py, ai_agent.py |
 | ✅ | Minervini VCP Validator (all 16 screens) | Complete | ai_agent.py |
-| ⏳ | Streaming Responses | Next | server.py, dashboard.html |
+| ✅ | Streaming Responses | Complete | ai_agent.py, server.py, dashboard.html |
 | ⏳ | Structured Trade Cards (JSON output) | Pending | ai_agent.py |
 | ⏳ | AI Evals & Observability (Langfuse) | Pending | new file |
 | ⏳ | MCP Server | Pending | new file |
