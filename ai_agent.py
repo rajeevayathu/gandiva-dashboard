@@ -54,7 +54,7 @@ def _query_rag(query: str, n: int = 4) -> list[dict]:
             results['metadatas'][0],
             results['distances'][0],
         ):
-            if dist < 0.7:   # cosine distance < 0.7 = meaningful relevance
+            if dist < 0.7:
                 passages.append({
                     'text':  doc,
                     'book':  meta.get('book', ''),
@@ -64,6 +64,146 @@ def _query_rag(query: str, n: int = 4) -> list[dict]:
         return passages
     except Exception:
         return []
+
+
+# ── Scan history RAG (lazy-loaded) ────────────────────────────────────────────
+_hist_collection  = None
+_hist_embed_model = None
+
+def _get_history_rag():
+    global _hist_collection, _hist_embed_model
+    if _hist_collection is not None:
+        return _hist_collection, _hist_embed_model
+    if not os.path.exists(RAG_DB):
+        return None, None
+    try:
+        import chromadb
+        from sentence_transformers import SentenceTransformer
+        client = chromadb.PersistentClient(path=RAG_DB)
+        _hist_collection  = client.get_collection('scan_history')
+        _hist_embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+    except Exception:
+        return None, None
+    return _hist_collection, _hist_embed_model
+
+
+def _query_history(query: str, n: int = 12, ticker_filter: str = None) -> list[dict]:
+    """
+    Search scan history for temporal queries.
+    ticker_filter: if set, only return results for that ticker.
+    """
+    collection, model = _get_history_rag()
+    if collection is None or model is None:
+        return []
+    try:
+        embedding = model.encode([query]).tolist()
+        where     = {'ticker': ticker_filter.upper()} if ticker_filter else None
+        kwargs    = dict(
+            query_embeddings=embedding,
+            n_results=n,
+            include=['documents', 'metadatas', 'distances'],
+        )
+        if where:
+            kwargs['where'] = where
+        results = collection.query(**kwargs)
+        records = []
+        for doc, meta, dist in zip(
+            results['documents'][0],
+            results['metadatas'][0],
+            results['distances'][0],
+        ):
+            if dist < 0.85:
+                records.append({
+                    'text':   doc,
+                    'date':   meta.get('date', ''),
+                    'ticker': meta.get('ticker', ''),
+                    'regime': meta.get('regime', ''),
+                    'score':  round(1 - dist, 3),
+                })
+        records.sort(key=lambda x: x['date'])
+        return records
+    except Exception:
+        return []
+
+
+def _history_stock_trend(ticker: str) -> str:
+    """
+    Build a full trend summary for one ticker across all scan dates.
+    Reads directly from scan_history.jsonl for accuracy.
+    """
+    import re as _re
+    jsonl = os.path.join(BASE_DIR, 'scan_history.jsonl')
+    if not os.path.exists(jsonl):
+        return ''
+    ticker = ticker.upper()
+    entries = []
+    with open(jsonl) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            for s in rec.get('stocks', []):
+                if s.get('ticker') == ticker:
+                    entries.append({
+                        'date':    rec['date'],
+                        'regime':  rec.get('regime', '?'),
+                        'rs':      s.get('rs_rank'),
+                        'price':   s.get('price'),
+                        'pct_hi':  s.get('pct_from_high'),
+                        'vol':     s.get('vol_ratio'),
+                        'vcp_d':   s.get('vcp_daily'),
+                        'vcp_w':   s.get('vcp_weekly'),
+                        'passed':  s.get('passed'),
+                        'screens': s.get('screens', []),
+                    })
+    if not entries:
+        return f'{ticker} not found in any scan history.'
+    entries.sort(key=lambda x: x['date'])
+    lines = [f"SCAN HISTORY FOR {ticker} ({len(entries)} scan dates):"]
+    for e in entries:
+        scrs = ', '.join(e['screens'])
+        vcp  = ('VCP-D ' if e['vcp_d'] else '') + ('VCP-W' if e['vcp_w'] else '')
+        lines.append(
+            f"  {e['date']} | RS:{e['rs']} | ₹{e['price']} | "
+            f"base:{e['pct_hi']:+.1f}% | vol:{e['vol']:.2f}x | "
+            f"{vcp or 'no-VCP'} | {e['passed']}/8 criteria | {scrs}"
+        )
+    return '\n'.join(lines)
+
+
+def _history_screen_frequency(screen_label: str, min_count: int = 2) -> str:
+    """
+    Find stocks that appeared in a screen N+ times across all scan history.
+    """
+    jsonl = os.path.join(BASE_DIR, 'scan_history.jsonl')
+    if not os.path.exists(jsonl):
+        return ''
+    counts: dict[str, list] = {}
+    with open(jsonl) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            for s in rec.get('stocks', []):
+                if any(screen_label.lower() in scr.lower() for scr in s.get('screens', [])):
+                    tk = s['ticker']
+                    counts.setdefault(tk, []).append(rec['date'])
+    qualified = [(tk, dates) for tk, dates in counts.items() if len(dates) >= min_count]
+    qualified.sort(key=lambda x: -len(x[1]))
+    if not qualified:
+        return f'No stocks appeared in {screen_label} {min_count}+ times.'
+    lines = [f"STOCKS IN '{screen_label}' {min_count}+ TIMES:"]
+    for tk, dates in qualified[:20]:
+        lines.append(f"  {tk:15} {len(dates)}x  dates: {', '.join(sorted(dates)[-5:])}")
+    return '\n'.join(lines)
 
 # ── Minervini-style VCP validator ─────────────────────────────────────────────
 def _validate_vcp_minervini(stocks: list, screens: dict) -> list:
@@ -744,6 +884,45 @@ def _build_context(user_message: str) -> tuple[str, list[str]]:
             for s in ck_mtf
         ]
         parts.append("CCI MULTI-TF (Daily+Weekly ≥100) TOP 15:\n" + ('\n'.join(rows) if rows else '  (none)'))
+
+    # ── Scan history queries ──────────────────────────────────────────────────
+    _history_keywords = ['history', 'trend', 'last', 'previous', 'scan', 'times',
+                         'week', 'month', 'consistent', 'consecutive', 'repeat',
+                         'appear', 'appeared', 'track', 'over time', 'how long']
+    if any(w in q for w in _history_keywords):
+        tools.append('query_scan_history')
+
+        # Ticker trend lookup
+        import re as _re2
+        mentioned = _re2.findall(r'\b([A-Z]{3,}[A-Z0-9]*)\b', user_message.upper())
+        _skip = {'THE','AND','FOR','WHAT','HOW','CCI','RSI','NSE','BSE','VCP','MTF',
+                 'EMA','SMA','ATR','IPO','FNO','LAST','SCAN','WEEK','MONTH','SHOW',
+                 'FULL','TEMPLATE','TIMES','OVER','TREND','HISTORY'}
+        for tk in mentioned:
+            if tk in _skip:
+                continue
+            trend = _history_stock_trend(tk)
+            if trend:
+                parts.append(trend)
+
+        # Screen frequency lookup
+        for scr_label in ['Full Template', 'VCP', 'CCI Daily', 'CCI Weekly', 'MA Pullback',
+                          'Near Breakout', 'F&O', 'RS Leaders']:
+            if scr_label.lower() in q:
+                freq = _history_screen_frequency(scr_label, min_count=2)
+                if freq:
+                    parts.append(freq)
+                break
+
+        # Semantic history search for general questions
+        hist_results = _query_history(user_message, n=10)
+        if hist_results:
+            lines = ['SCAN HISTORY (semantic search):']
+            for r in hist_results[:8]:
+                if r['ticker'] != '__overview__':
+                    lines.append(f"  [{r['date']}] {r['text']}")
+            if len(lines) > 1:
+                parts.append('\n'.join(lines))
 
     # ── MA pullback ────────────────────────────────────────────────────────────
     if any(w in q for w in ['pullback', 'ma ', 'moving average', 'ma50', 'ema']):

@@ -3837,6 +3837,17 @@ def run():
     except Exception as e:
         print(f"  [WARN] Market analysis generation failed: {e}")
 
+    # ── SCAN HISTORY RAG — auto-snapshot after every scan ────────────────────
+    try:
+        from build_history_rag import take_snapshot, append_snapshot, build_history_index
+        snap = take_snapshot(RESULTS_JSON)
+        if snap:
+            append_snapshot(snap)
+            build_history_index()
+            print(f"  Scan history RAG updated: {snap['date']} ({len(snap['stocks'])} stocks)")
+    except Exception as _hrag_ex:
+        print(f"  [WARN] Scan history RAG update failed: {_hrag_ex}")
+
 def fetch_fiidii_history_auto():
     """
     Scrape full historical FII/DII data from NSE using curl_cffi.
