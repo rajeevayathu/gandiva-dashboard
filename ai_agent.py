@@ -10,10 +10,34 @@ No data is sent to external servers except scan context sent to Groq for inferen
 import json
 import os
 import re
+import time
 
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
 RESULTS_JSON = os.path.join(BASE_DIR, 'results.json')
 RAG_DB       = os.path.join(BASE_DIR, 'rag_db')
+
+# ── Langfuse observability (optional — only active if keys set in .env) ───────
+_langfuse = None
+
+def _get_langfuse():
+    """Lazy-load Langfuse client. Returns None if keys not configured."""
+    global _langfuse
+    if _langfuse is not None:
+        return _langfuse
+    pk = os.environ.get('LANGFUSE_PUBLIC_KEY', '')
+    sk = os.environ.get('LANGFUSE_SECRET_KEY', '')
+    if not (pk and sk):
+        return None
+    try:
+        from langfuse import Langfuse
+        _langfuse = Langfuse(
+            public_key=pk,
+            secret_key=sk,
+            host=os.environ.get('LANGFUSE_HOST', 'https://cloud.langfuse.com'),
+        )
+    except Exception:
+        pass
+    return _langfuse
 
 # ── RAG retriever (lazy-loaded on first use) ──────────────────────────────────
 _rag_collection  = None
@@ -963,7 +987,43 @@ MINERVINI'S VCP CHECKLIST (from the book):
 - Volume contraction: volume must DRY UP in the base — fewer sellers each contraction
 - Contraction symmetry: each swing smaller than the last (2–4 contractions typical)
 - Pivot point: clear breakout level with volume expansion expected on breakout
-- CCI momentum: institutional accumulation footprint visible in CCI34 ≥ 100"""
+- CCI momentum: institutional accumulation footprint visible in CCI34 ≥ 100
+
+TRADE CARD OUTPUT (MANDATORY):
+When you recommend any specific stock for trading, you MUST append a JSON block at the very end of your response — after all prose — in EXACTLY this format (no extra keys, no comments):
+
+```json
+[
+  {
+    "ticker": "SYMBOL",
+    "grade": "A",
+    "pattern": "VCP",
+    "entry_low": 0,
+    "entry_high": 0,
+    "stop_loss": 0,
+    "stop_pct": 0.0,
+    "target": 0,
+    "target_pct": 0.0,
+    "risk_reward": 0.0,
+    "timeframe": "4-8 weeks",
+    "reasoning": "one line summary of why this qualifies"
+  }
+]
+```
+
+Rules for the JSON block:
+- Only include Grade-A stocks (score ≥ 80). Never include Grade-B or failing stocks.
+- Each stock in the scan data has a "price" field — use it to compute real entry/stop/target values.
+  - entry_low  = price (current price, potential breakout entry)
+  - entry_high = round(price * 1.02, 2)  (2% above for confirmation entry)
+  - stop_loss  = round(entry_low * (1 - stop_pct/100), 2)
+  - target     = round(entry_low * (1 + target_pct/100), 2)
+  - risk_reward = round(target_pct / stop_pct, 2)
+- stop_pct: use 7-8% for tight VCP bases, 10-12% for wider bases
+- target_pct: use 20-25% for VCP breakouts in bull market
+- NEVER leave entry_low, stop_loss, or target as 0 — always compute from price.
+- If no Grade-A stocks exist, do NOT include the JSON block at all.
+- The JSON block must be valid — parseable by Python json.loads()."""
 
 
 # ── SHARED PROMPT BUILDER ─────────────────────────────────────────────────────
@@ -990,40 +1050,183 @@ def _build_messages(user_message: str) -> tuple[list[dict], list[str]]:
     return messages, list(dict.fromkeys(tools_used))
 
 
+# ── TRADE CARD EXTRACTOR ──────────────────────────────────────────────────────
+def _extract_trade_cards(text: str) -> tuple[str, list]:
+    """
+    Pull ```json [...] ``` blocks from the LLM response.
+    Returns (clean_text_without_json, cards_list).
+    """
+    import re
+    cards = []
+    pattern = r'```json\s*(\[.*?\])\s*```'
+    matches = re.findall(pattern, text, re.DOTALL)
+    for m in matches:
+        try:
+            parsed = json.loads(m)
+            if isinstance(parsed, list):
+                cards.extend(parsed)
+        except Exception:
+            pass
+    clean = re.sub(pattern, '', text, flags=re.DOTALL).strip()
+    return clean, cards
+
+
+# ── LLM CLIENT FACTORY ────────────────────────────────────────────────────────
+OLLAMA_MODEL = 'llama3.2'
+OLLAMA_URL   = 'http://localhost:11434/v1'
+
+def _get_client(api_key: str):
+    """
+    Returns (client, model_name).
+    Priority: Groq (cloud, fast) → Ollama (local, always free).
+    Falls back to Ollama automatically if no Groq key is set or Groq is unreachable.
+    """
+    if api_key:
+        try:
+            from groq import Groq
+            return Groq(api_key=api_key), 'llama-3.3-70b-versatile'
+        except Exception:
+            pass
+    # Fallback: Ollama local
+    from openai import OpenAI
+    return OpenAI(base_url=OLLAMA_URL, api_key='ollama'), OLLAMA_MODEL
+
+
 # ── STANDARD (non-streaming) ──────────────────────────────────────────────────
 def run_agent(user_message: str, api_key: str) -> tuple:
-    """Returns (answer: str, tools_used: list[str])."""
-    from groq import Groq
-    client   = Groq(api_key=api_key)
+    """Returns (answer: str, tools_used: list[str], trade_cards: list)."""
+    client, model = _get_client(api_key)
+    lf     = _get_langfuse()
+    trace  = lf.trace(
+        name='gandiva-query',
+        input={'question': user_message},
+        tags=['dashboard'],
+    ) if lf else None
+
+    t0 = time.time()
+
+    # RAG span
+    if trace:
+        rag_span = trace.span(name='book-rag', input={'query': user_message})
+    passages = _query_rag(user_message, n=4)
+    if trace:
+        rag_span.end(output={
+            'chunks_found': len(passages),
+            'top_pages': [p['page'] for p in passages],
+            'top_scores': [round(p['score'], 3) for p in passages],
+        })
+
     messages, tools_used = _build_messages(user_message)
-    resp   = client.chat.completions.create(
-        model='llama-3.3-70b-versatile', messages=messages,
-        max_tokens=1024, temperature=0.2,
+
+    # LLM generation span
+    if trace:
+        gen = trace.generation(
+            name='llm-response',
+            model=model,
+            input=messages,
+        )
+
+    resp  = client.chat.completions.create(
+        model=model, messages=messages,
+        max_tokens=1500, temperature=0.2,
     )
-    return (resp.choices[0].message.content or '').strip(), tools_used
+    raw   = (resp.choices[0].message.content or '').strip()
+    clean, cards = _extract_trade_cards(raw)
+
+    if trace:
+        gen.end(
+            output=clean,
+            usage={
+                'input':  getattr(getattr(resp, 'usage', None), 'prompt_tokens',     0),
+                'output': getattr(getattr(resp, 'usage', None), 'completion_tokens', 0),
+            },
+        )
+        trace.update(output={
+            'answer_length': len(clean),
+            'tools_used':    tools_used,
+            'trade_cards':   len(cards),
+            'latency_sec':   round(time.time() - t0, 2),
+        })
+        lf.flush()
+
+    return clean, tools_used, cards
 
 
 # ── STREAMING ─────────────────────────────────────────────────────────────────
 def run_agent_stream(user_message: str, api_key: str):
     """
     Generator that yields dicts:
-      {'type': 'tools',  'tools': [...]}   — emitted first
-      {'type': 'chunk',  'text':  '...'}   — one per token
-      {'type': 'done'}                     — emitted last
+      {'type': 'tools',  'tools': [...]}         — emitted first
+      {'type': 'chunk',  'text':  '...'}         — one per token
+      {'type': 'cards',  'cards': [...]}         — after done, if trade cards found
+      {'type': 'done'}                           — emitted last
     """
-    from groq import Groq
-    client   = Groq(api_key=api_key)
-    messages, tools_used = _build_messages(user_message)
+    client, model = _get_client(api_key)
+    lf     = _get_langfuse()
+    trace  = lf.trace(
+        name='gandiva-stream',
+        input={'question': user_message},
+        tags=['dashboard', 'stream'],
+    ) if lf else None
 
+    t0 = time.time()
+
+    # RAG span
+    if trace:
+        rag_span = trace.span(name='book-rag', input={'query': user_message})
+    passages = _query_rag(user_message, n=4)
+    if trace:
+        rag_span.end(output={
+            'chunks_found': len(passages),
+            'top_pages':   [p['page'] for p in passages],
+        })
+
+    messages, tools_used = _build_messages(user_message)
     yield {'type': 'tools', 'tools': tools_used}
 
+    if trace:
+        gen = trace.generation(
+            name='llm-stream',
+            model=model,
+            input=messages,
+        )
+
     stream = client.chat.completions.create(
-        model='llama-3.3-70b-versatile', messages=messages,
-        max_tokens=1024, temperature=0.2, stream=True,
+        model=model, messages=messages,
+        max_tokens=1500, temperature=0.2, stream=True,
     )
+    full_text    = ''
+    json_start   = None   # index where ```json block begins — suppress from stream
     for chunk in stream:
-        delta = chunk.choices[0].delta.content
-        if delta:
-            yield {'type': 'chunk', 'text': delta}
+        if chunk.choices and chunk.choices[0].delta.content:
+            delta      = chunk.choices[0].delta.content
+            full_text += delta
+            # Detect start of JSON block and stop streaming visible text
+            if json_start is None and '```json' in full_text:
+                json_start = full_text.index('```json')
+            if json_start is None:
+                yield {'type': 'chunk', 'text': delta}
+
+    _, cards = _extract_trade_cards(full_text)
+    if cards:
+        yield {'type': 'cards', 'cards': cards}
+
+    if trace:
+        clean, _ = _extract_trade_cards(full_text)
+        # Estimate tokens: ~4 chars per token
+        ctx_chars = sum(len(str(m.get('content', ''))) for m in messages)
+        gen.end(
+            output=clean,
+            usage={
+                'input':  ctx_chars // 4,
+                'output': len(full_text) // 4,
+            },
+        )
+        trace.update(output={
+            'tools_used':  tools_used,
+            'trade_cards': len(cards),
+            'latency_sec': round(time.time() - t0, 2),
+        })
+        lf.flush()
 
     yield {'type': 'done'}

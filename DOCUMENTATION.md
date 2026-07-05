@@ -24,7 +24,15 @@
 13. [Security — What Is Private, What Leaves Your Mac](#13-security--what-is-private-what-leaves-your-mac)
 14. [File Structure — What Every File Does](#14-file-structure--what-every-file-does)
 15. [Interview Questions & Answers](#15-interview-questions--answers)
-16. [Features Built — Status Tracker](#16-features-built--status-tracker)
+16. [Agentic Workflow — Gandiva Morning Brief & Telegram Bot](#16-agentic-workflow--gandiva-morning-brief--telegram-bot)
+17. [AI Observability — Langfuse](#17-ai-observability--langfuse)
+18. [Daily Scheduler — How Automation Works](#18-daily-scheduler--how-automation-works)
+19. [MCP Server — Model Context Protocol](#19-mcp-server--model-context-protocol)
+20. [Ollama — Local LLM Fallback](#20-ollama--local-llm-fallback)
+21. [Structured Trade Cards](#21-structured-trade-cards)
+22. [How to Run — Complete Reference](#22-how-to-run--complete-reference)
+23. [Portfolio Pitch — How to Present This Project](#23-portfolio-pitch--how-to-present-this-project)
+24. [Features Built — Status Tracker](#24-features-built--status-tracker)
 
 ---
 
@@ -913,7 +921,745 @@ Free tier with no credit card required. For a personal portfolio project running
 
 ---
 
-## 16. Features Built — Status Tracker
+## 16. Agentic Workflow — Gandiva Morning Brief & Telegram Bot
+
+### What Is an Agentic Workflow?
+
+A regular AI answers a question when you ask it. An **agentic workflow** is an AI that acts autonomously — it decides what data to gather, runs multiple steps in sequence, produces a structured output, and delivers it somewhere useful — all without you doing anything.
+
+Our agentic pipeline runs every evening and delivers a trading brief to your phone.
+
+---
+
+### The Gandiva Bot
+
+**Name origin:** Gandiva is Arjuna's divine bow from the Mahabharata — it never missed its target. Named to represent precision, speed, and power in identifying stock setups.
+
+- **Telegram handle:** @GandivaScannerBot
+- **Bot ID:** 8861126690
+- **Platform:** Telegram Bot API (free, no server required)
+
+---
+
+### What is Telegram Bot API?
+
+Telegram provides a free HTTP API that lets any program send messages to any Telegram user. You don't need to host a server — you just make HTTP POST requests to:
+
+```
+https://api.telegram.org/bot{TOKEN}/sendMessage
+```
+
+with `chat_id` (who to send to) and `text` (what to send). Telegram delivers it instantly to the user's phone.
+
+**Two things needed:**
+1. `BOT_TOKEN` — given by BotFather when you create the bot
+2. `CHAT_ID` — the user's unique Telegram ID, captured by polling for a `/start` message
+
+---
+
+### Registration Flow (One-Time Setup)
+
+```
+python3 telegram_bot.py
+    ↓
+Script polls getUpdates API every 2 seconds
+    ↓
+User sends /start to @GandivaScannerBot in Telegram
+    ↓
+Script captures chat_id from the update
+    ↓
+Saves to telegram_chat_id.json  (permanent, never expires)
+    ↓
+Sends confirmation message to user
+```
+
+After this one-time step, the bot knows where to send every future alert.
+
+---
+
+### Morning Brief Pipeline — Step by Step
+
+**File:** `morning_brief.py`
+
+```
+Step 1: Load results.json
+        → collect all unique stocks across all 16 screens
+        → note which screens each stock appears in
+
+Step 2: Load regime data
+        → market label (BULL/CAUTION/BEAR)
+        → % stocks above 200MA
+        → breadth reading
+
+Step 3: Build context for AI
+        → top 20 candidates with RS rating, relative volume, screen count
+        → regime summary
+        → date and trading context
+
+Step 4: Call run_agent()
+        → context stuffing kicks in (book RAG + history RAG + live data)
+        → LLM writes structured brief:
+            - Regime interpretation + position sizing guidance
+            - Top 3-5 Grade-A VCP setups with entry/stop/target
+            - High-confluence stocks (appearing in 3+ screens)
+            - Risk management reminder
+            - Minervini quote relevant to current conditions
+
+Step 5: Save HTML brief
+        → exports/Briefs/brief_YYYY-MM-DD.html
+        → dark-themed, table of all candidates, screen coverage
+
+Step 6: Send Telegram alert
+        → split into 4,000-char chunks (Telegram limit)
+        → sends each chunk sequentially
+        → falls back to plain text if Markdown formatting fails
+```
+
+---
+
+### High-Confluence Stocks — Why They Matter
+
+A stock appearing in 3+ screens simultaneously is a strong signal:
+
+| Screens | Meaning |
+|---------|---------|
+| Full Template | Passes all 8 Minervini criteria |
+| VCP Setup | Volatility contraction pattern detected |
+| RS Leaders | Top relative strength in the market |
+| Near Breakout | Price within 5% of pivot |
+
+If DIXON appears in all four → it's passing every filter independently. Each screen is a separate algorithm. Agreement = high conviction.
+
+---
+
+### Telegram Markdown — Why Fallback Exists
+
+Telegram supports a limited subset of Markdown. Characters like `_`, `*`, `[`, `]`, `.` have special meaning. If the AI generates text with unmatched or misplaced symbols, Telegram returns HTTP 400 Bad Request.
+
+**Fix:** `send_message()` catches the 400 error, strips all Markdown symbols from the text, and retries as plain text. The message always arrives — formatting is best-effort.
+
+---
+
+### Files Involved
+
+| File | Role |
+|------|------|
+| `telegram_bot.py` | Bot API wrapper — send_message, register_via_polling, load/save chat_id |
+| `morning_brief.py` | Full agentic pipeline — scan → analyze → format → deliver |
+| `telegram_chat_id.json` | Persisted chat_id after one-time /start registration |
+| `exports/Briefs/` | HTML brief archive, one file per day |
+| `.env` | Stores TELEGRAM_BOT_TOKEN (never committed to git) |
+
+---
+
+### Interview Questions
+
+**Q: What is an agentic workflow?**
+
+An agentic workflow is a pipeline where an AI autonomously decides what tools to use, sequences multiple steps, and produces a structured output without human intervention at each step. Ours follows a ReAct-style pattern: gather context (scan data + book RAG + history RAG) → reason (LLM analysis) → act (send Telegram). The key distinction from a chatbot is autonomy — it runs on a schedule, not on demand.
+
+**Q: What is the Telegram Bot API and how does it work?**
+
+Telegram's Bot API is a free HTTP interface that lets programs send messages to Telegram users. You create a bot via @BotFather (gets you a token), then make POST requests to `api.telegram.org/bot{token}/sendMessage` with the recipient's chat_id. No server hosting required — Telegram's infrastructure handles delivery. The main limitation is a 4,096 character message limit and restricted Markdown syntax.
+
+**Q: How do you capture a user's chat_id without them knowing their own ID?**
+
+Poll the `getUpdates` endpoint after asking the user to send `/start` to the bot. The update object contains the sender's `chat` field with their `id`. This is a standard bot onboarding pattern — you register once, persist the chat_id, and all future sends use that stored value.
+
+**Q: What happens if the Telegram message fails?**
+
+Our `send_message()` function has a two-level fallback: first attempt with Markdown formatting, catch any HTTP error, strip all Markdown symbols, retry as plain text. This ensures the message always arrives even if formatting is broken. The HTML brief is also saved locally as a permanent record regardless of whether Telegram delivery succeeded.
+
+---
+
+## 17. AI Observability — Langfuse
+
+### What is Observability?
+
+In software engineering, observability means being able to see inside a running system — what it did, how long it took, where it failed. For a web server, that's request logs. For an AI system, it means tracing every LLM call from input to output.
+
+Without observability, you're flying blind:
+- Is the RAG retrieving relevant chunks or random noise?
+- Is the LLM staying grounded in the book or hallucinating?
+- Which questions use the most tokens (cost)?
+- Is latency getting worse over time?
+
+**Langfuse** is the leading open-source LLM observability platform. Used in production by teams at major AI companies.
+
+---
+
+### What We Track Per Query
+
+Every time someone asks Gandiva a question, Langfuse records a full **trace** with nested **spans**:
+
+```
+Trace: "gandiva-query"  (the full request)
+├── Span: "book-rag"
+│     Input:  query text
+│     Output: 4 chunks found, pages [89, 134, 218, 301], scores [0.42, 0.51, 0.63, 0.71]
+│     Duration: 180ms
+│
+├── Generation: "llm-response"
+│     Input:  full messages array (system prompt + context + user question)
+│     Output: clean answer text
+│     Model:  llama-3.3-70b-versatile
+│     Tokens: 3,840 input / 420 output
+│     Duration: 1,240ms
+│
+└── Trace output:
+      answer_length: 1,820 chars
+      tools_used: [query_minervini_book, get_scan_summary, filter_stocks]
+      trade_cards: 2
+      latency_sec: 1.42
+```
+
+---
+
+### How It Works — Architecture
+
+```
+User asks question in dashboard
+    ↓
+run_agent_stream() starts
+    ↓
+_get_langfuse() → checks .env for LANGFUSE_PUBLIC_KEY + LANGFUSE_SECRET_KEY
+    ↓ (if keys present)
+lf.trace() → creates trace object in memory
+    ↓
+RAG runs → trace.span("book-rag") records what was retrieved
+    ↓
+LLM runs → trace.generation("llm-response") records prompt + output + token usage
+    ↓
+Trade cards extracted → recorded in trace output
+    ↓
+lf.flush() → sends all trace data to Langfuse cloud (async, non-blocking)
+    ↓
+Langfuse web dashboard → you see the full trace
+```
+
+**Graceful degradation:** If `LANGFUSE_PUBLIC_KEY` is not in `.env`, `_get_langfuse()` returns `None` and every `if trace:` block is skipped. Zero performance impact, zero errors.
+
+---
+
+### Key Concepts
+
+**Trace:** One complete request/response cycle — the top-level container.
+
+**Span:** A sub-step within a trace with its own start/end time — used for RAG retrieval.
+
+**Generation:** A special span specifically for LLM calls — Langfuse understands token counts, model names, and cost estimation automatically.
+
+**Flush:** Langfuse batches data in memory and sends it asynchronously. `lf.flush()` forces an immediate send — important to call after each query so data isn't lost if the server restarts.
+
+---
+
+### What You See in the Langfuse Dashboard
+
+- **Traces list**: every question asked, when, how long it took
+- **Trace detail**: drill into any query to see exactly what RAG retrieved and what the LLM responded
+- **Token usage**: total tokens per day/week, broken down by model
+- **Latency charts**: p50/p95 response times over time
+- **Score tracking**: you can manually rate responses as good/bad → builds a quality dataset
+- **Cost estimation**: Langfuse estimates API cost based on token usage and model pricing
+
+---
+
+### Setup (One-Time)
+
+1. Go to **cloud.langfuse.com** → sign up free (no credit card)
+2. Create a project called "Gandiva"
+3. Go to Settings → API Keys → copy Public Key + Secret Key
+4. Add to `.env`:
+```
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+```
+5. Restart `server.py` — tracing activates automatically
+
+---
+
+### Interview Questions
+
+**Q: What is LLM observability and why does it matter?**
+
+LLM observability is the ability to inspect what an AI system did at every step of a request — what data it retrieved, what prompt it sent, what the model responded, how many tokens it used, and how long it took. It matters because LLMs are non-deterministic black boxes: the same question can get different answers depending on what RAG retrieved. Without observability, you can't tell if the system is working correctly, degrading over time, or hallucinating. It's the difference between a hobby project and a production system.
+
+**Q: What is the difference between a trace, span, and generation in Langfuse?**
+
+A trace is the top-level container for one complete user request. Spans are nested steps within that trace — each with their own start/end time, input, and output. A generation is a special type of span specifically for LLM calls — Langfuse gives it extra treatment: it understands token counts, cost estimation, and model versioning. Our trace has one RAG span (what the book search returned) and one generation (what the LLM said).
+
+**Q: How did you make Langfuse optional without breaking the existing system?**
+
+The `_get_langfuse()` function checks for API keys in the environment. If they're not present, it returns `None`. Every tracing call is guarded by `if trace:` — so if `_get_langfuse()` returns `None`, every tracing block is a no-op. The `run_agent` and `run_agent_stream` functions work identically with or without Langfuse. This is called graceful degradation — the feature enhances the system without creating a hard dependency.
+
+**Q: How would you use Langfuse to evaluate RAG quality?**
+
+Retrieve the traces for a sample of questions. For each trace, look at the RAG span: what chunks were retrieved and what were their similarity scores? Then look at the LLM generation: does the answer cite information from the retrieved chunks, or is it making things up? Langfuse's scoring feature lets you annotate traces as good/bad. Over time, you build a labelled dataset you can use to measure retrieval precision and answer faithfulness — the two key RAG quality metrics. You can also run automated evals using RAGAS framework and log the scores back to Langfuse.
+
+---
+
+## 18. Daily Scheduler — How Automation Works
+
+### The Problem
+
+Python scripts don't run themselves. For Gandiva to send a brief every evening at 8 PM, something needs to trigger `daily_run.py` at that exact time — whether the user is at their desk or not.
+
+### macOS launchd — The Right Tool for Mac
+
+**launchd** is macOS's system daemon manager — the same infrastructure that starts Bluetooth, Wi-Fi, and every background Apple service. It is more reliable than `cron` on Mac because:
+- Survives reboots (automatically re-registers on login)
+- Handles sleep/wake correctly (fires as soon as Mac wakes if it missed the scheduled time)
+- Integrated with the OS — Apple's recommended scheduler
+
+**cron** on Mac has known issues: it doesn't run reliably when the Mac is sleeping, requires full disk access permissions separately, and can be killed silently by macOS security policies.
+
+---
+
+### How launchd Works
+
+A **plist** (Property List) file defines the job — it's an XML config file that tells launchd:
+- What program to run
+- When to run it
+- Where to write logs
+
+```xml
+<key>StartCalendarInterval</key>
+<dict>
+  <key>Hour</key>   <integer>20</integer>   <!-- 8 PM -->
+  <key>Minute</key> <integer>0</integer>
+</dict>
+```
+
+The plist lives at `~/Library/LaunchAgents/com.gandiva.scanner.plist`. LaunchAgents run as the current user (not root) — appropriate for user-level tasks like our scanner.
+
+---
+
+### Registration Commands
+
+```bash
+# Register the job (run once)
+launchctl load ~/Library/LaunchAgents/com.gandiva.scanner.plist
+
+# Check it's registered
+launchctl list | grep gandiva
+
+# Unregister (stop scheduling)
+launchctl unload ~/Library/LaunchAgents/com.gandiva.scanner.plist
+
+# Trigger manually for testing
+launchctl start com.gandiva.scanner
+```
+
+---
+
+### daily_run.py — What It Does
+
+```
+8:00 PM — launchd wakes and calls daily_run.py
+    ↓
+Step 1: Run scanner.py (subprocess, 30 min max timeout)
+        → fetches live NSE data
+        → updates all 16 screens
+        → updates prev_screens.json (resets "New This Scan" baseline)
+        → updates scan_history.jsonl (history RAG grows)
+        → writes results.json
+    ↓
+Step 2: (only if scanner succeeded) Run morning_brief.py
+        → AI analysis of today's results
+        → HTML brief saved to exports/Briefs/
+        → Telegram alert sent to @GandivaScannerBot
+    ↓
+All output logged to logs/daily_run.log with timestamps
+```
+
+---
+
+### What "New This Scan" Shows After Daily Scheduling
+
+Since the scanner runs every day at 8 PM, `prev_screens.json` is updated daily. This means:
+
+- **"New This Scan" = "New Since Yesterday 8 PM"** — exactly a 24-hour window
+- If your Mac was off for 3 days and you open it: launchd fires once, scanner runs, compares against whatever `prev_screens.json` contains (from 3 days ago) — so you see everything new in the last 3 days
+
+**The one blind spot:** stocks that briefly entered and exited a screen during the gap (e.g., appeared Monday, disappeared Tuesday) are invisible because the scanner only captures the current snapshot vs the last snapshot. This is inherent to point-in-time comparison, not a bug.
+
+---
+
+### Option A vs Option B — Scheduling Approaches
+
+**Option A (current implementation — local launchd):**
+- Runs on your Mac at 8 PM
+- Requires Mac to be on/awake
+- "New This Scan" works perfectly — same machine, same files
+- If Mac sleeps: runs when Mac wakes up
+- If Mac off 3 days: runs once on open, covers full gap
+
+**Option B (cloud — GitHub Actions):**
+- Runs on GitHub's servers at 8 PM regardless of Mac state
+- Telegram alert is 100% reliable
+- "New This Scan" on local dashboard breaks (results.json is on GitHub, not Mac)
+- Fix: dashboard fetches results.json from GitHub URL on load (auto-sync)
+- Best for: reliable daily Telegram alert even if Mac is rarely on
+
+**Current choice: Option A** — simpler, everything stays local, dashboard always in sync. Upgrade to Option B if reliable Telegram delivery becomes the priority.
+
+---
+
+### Log Files
+
+| File | Contents |
+|------|----------|
+| `logs/daily_run.log` | Timestamped log of every step — scanner output, brief generation, Telegram status |
+| `logs/launchd_out.log` | Raw stdout from launchd (mirrors daily_run.log) |
+| `logs/launchd_err.log` | Any stderr/crashes from the scheduled run |
+
+---
+
+### Interview Questions
+
+**Q: How did you schedule the pipeline to run automatically?**
+
+Used macOS launchd — the OS-level daemon manager — rather than cron, because launchd is more reliable on Mac: it survives reboots, handles sleep/wake gracefully, and is the Apple-recommended approach. Defined a plist file under `~/Library/LaunchAgents/` with `StartCalendarInterval` set to 8 PM. The plist calls `daily_run.py` which runs scanner.py first and morning_brief.py second, with full logging to timestamped log files.
+
+**Q: What happens if the scanner crashes — does the brief still run?**
+
+No. `daily_run.py` checks the return code of the scanner subprocess. If it fails (non-zero exit code or timeout), it logs the error and skips the brief entirely. Sending an AI brief based on stale data would be misleading. The brief only runs when the scanner succeeds and `results.json` is fresh.
+
+**Q: Why not just use cron?**
+
+cron on macOS has known reliability issues: it doesn't reliably wake the machine from sleep, requires separate Full Disk Access permissions in System Preferences, and can be silently disabled by macOS security policies (Gatekeeper, SIP). launchd is the OS's own scheduler and doesn't have these problems. On Linux servers, cron is perfectly fine — but on Mac desktop, launchd is the correct tool.
+
+**Q: How would you move this to production for 1,000 users?**
+
+Replace launchd with a cloud scheduler (GitHub Actions, AWS EventBridge, or a cron job on a Linux VPS). Store results.json in S3 or a database instead of local file. The dashboard fetches from an API endpoint instead of localhost. Each user has their own chat_id stored in a database. The morning_brief pipeline becomes a cloud function (AWS Lambda or similar) triggered by the scheduler. The architecture is the same — the hosting layer changes.
+
+---
+
+## 19. MCP Server — Model Context Protocol
+
+### What is MCP?
+
+MCP (Model Context Protocol) is an open standard released by Anthropic in late 2024. It defines a universal way for AI models to connect to external tools and data sources — like a USB port for AI. Instead of every AI app building its own custom integrations, MCP provides one standard protocol any AI client can speak.
+
+### What We Built
+
+**File:** `mcp_server.py`
+
+Six tools exposed to any MCP-compatible AI client:
+
+| Tool | What it does |
+|------|-------------|
+| `get_market_regime` | Current NSE regime, breadth %, stocks above MA200 |
+| `get_screen` | All stocks from any of 16 scanner screens |
+| `get_top_setups` | Grade-A VCPs ranked by multi-screen confluence |
+| `validate_stock` | Full Minervini score breakdown for any ticker |
+| `query_minervini_book` | Semantic search over "Trade Like a Stock Market Wizard" |
+| `get_scan_summary` | Full overview: counts per screen, regime, scan time |
+
+### How It Works
+
+```
+Claude Desktop (or any MCP client)
+    ↓ speaks MCP protocol over stdio
+mcp_server.py (running on your Mac)
+    ↓ reads
+results.json + rag_db/ + scan_history.jsonl
+    ↓ returns structured data
+Claude Desktop formats and presents the answer
+```
+
+The MCP server runs as a background process managed by Claude Desktop. When you open Claude Desktop, it starts `mcp_server.py` automatically. When you close Claude Desktop, it stops.
+
+### Real Example — What Happened
+
+User asked: *"What are the best VCP setups in my NSE scanner right now?"*
+
+Claude Desktop autonomously:
+1. Called `get_market_regime()` → Strong Bull, 1,358 stocks
+2. Called `get_top_setups(min_rs=80)` → ranked HFCL, BAJAJCON, GRWRHITECH...
+3. Called `validate_stock("HFCL")` → entry ₹214.48, stop ₹197.32, target ₹257.38
+4. Called `validate_stock("BAJAJCON")` → entry ₹616.20, stop ₹566.90, target ₹739.44
+5. Applied user's risk rule (0.75% of ₹30L = ₹22,500 risk → ₹2.8L position size)
+
+**4 tool calls. One question. Zero dashboard interactions.**
+
+### Claude Desktop Configuration
+
+File: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "gandiva": {
+      "command": "/opt/homebrew/bin/python3.10",
+      "args": ["/path/to/mcp_server.py"]
+    }
+  }
+}
+```
+
+### Limitations (Current)
+
+- Mac must be on for MCP to work (local stdio transport)
+- Remote MCP (always-on cloud) requires hosting on a VPS
+- Data is only as fresh as the last scan run
+
+### Interview Questions
+
+**Q: What is MCP and why does it matter?**
+
+MCP is Anthropic's open standard for connecting AI models to external tools and data. Before MCP, every AI application built its own proprietary tool integration — Claude had one format, GPT had another, each IDE extension was different. MCP defines one standard protocol so any AI client can connect to any MCP server without custom integration work. It's architecturally significant because it decouples the AI (client) from the tools (server) — you can swap the AI model without rewriting the tools, and your tools work across any MCP-compatible AI.
+
+**Q: What's the difference between MCP tools and regular API calls?**
+
+In a regular API, you write code that explicitly calls specific endpoints. With MCP, the AI decides autonomously which tools to call and in what order based on the user's question. You don't write `if user_says_setup then call get_top_setups()` — the AI figures that out from the tool descriptions. This is the distinction between scripted automation and genuine agentic behaviour.
+
+**Q: How did you expose your scanner as an MCP server?**
+
+Used the FastMCP framework from the MCP Python SDK. Decorated each function with `@mcp.tool()` — the decorator registers the function as an MCP tool, uses the docstring as the tool description (what the AI reads to decide when to call it), and handles all the protocol serialization automatically. The server runs via `mcp.run(transport='stdio')` — Claude Desktop starts it as a subprocess and communicates over stdin/stdout.
+
+**Q: How would you scale MCP to serve multiple users?**
+
+Switch from stdio transport to HTTP/SSE transport (MCP supports both). Host the server on a VPS with a proper web framework (FastAPI). Add authentication — each user gets an API key. Store results.json per-user in a database instead of a local file. The tool logic stays identical — only the transport and storage layer changes. This is the production path for any MCP server.
+
+---
+
+## 20. Ollama — Local LLM Fallback
+
+### What is Ollama?
+
+Ollama is an open-source tool that lets you run large language models entirely on your own hardware — no internet, no API key, no token limits, no cost. It downloads model weights to your Mac and runs inference on the Apple Silicon chip.
+
+### How We Integrated It
+
+**The priority chain in `_get_client(api_key)`:**
+
+```python
+if api_key:           → use Groq cloud (llama-3.3-70b, fast, powerful)
+else:                 → use Ollama local (llama3.2, slower, free forever)
+```
+
+This is automatic — no code change needed. Remove the Groq key from `.env` and every AI call in the system (dashboard chat, morning brief, MCP tools) switches to Ollama instantly.
+
+### Models Installed
+
+| Model | Size | Speed | Best for |
+|-------|------|-------|---------|
+| llama3.2 (3B) | 2GB | ~15-30s/query | Fallback, simple questions |
+
+### Why Groq for Now, Ollama for Insurance
+
+The 70B vs 3B model size difference is significant for our use case:
+- Trade card JSON output requires precise instruction following → 70B does this reliably
+- Minervini VCP validation with 7 criteria → 70B reasons correctly
+- Book RAG with page citations → 70B cites accurately
+
+The 3B model handles simple regime questions well but can struggle with structured JSON output. For production-quality trade analysis, Groq's 70B is the right choice while it remains free.
+
+**Ollama activates when:**
+- Groq key is removed from `.env`
+- Groq API is unreachable
+- You're fully offline (travelling, no internet)
+
+### Useful Commands
+
+```bash
+# Start Ollama service
+brew services start ollama
+
+# List installed models
+ollama list
+
+# Pull a better model (8B — better quality, needs 5GB RAM)
+ollama pull llama3.1:8b
+
+# Test directly
+ollama run llama3.2 "What is a VCP setup?"
+
+# Check Ollama API
+curl http://localhost:11434/api/tags
+```
+
+### Interview Questions
+
+**Q: Why did you use the OpenAI SDK to talk to Ollama?**
+
+Ollama exposes an OpenAI-compatible REST API at `localhost:11434/v1`. By using `OpenAI(base_url='http://localhost:11434/v1', api_key='ollama')`, we get identical code for both cloud and local inference — the same `client.chat.completions.create()` call works for both Groq and Ollama. This is the standard pattern for LLM provider abstraction: program to the OpenAI interface, swap the base_url for different backends.
+
+**Q: What are the trade-offs between a 3B and 70B model for this use case?**
+
+Parameter count roughly correlates with reasoning capability and instruction following. Our system asks the model to: extract structured JSON trade cards, apply 7 Minervini criteria consistently, cite page numbers from retrieved book passages, and reason about market regimes. A 70B model handles all of these reliably. A 3B model handles simple factual questions but often deviates from the JSON schema or misses nuanced criteria. For a trading system where a wrong stop loss calculation has real financial consequences, model quality is not a place to cut corners.
+
+---
+
+## 21. Structured Trade Cards
+
+### What They Are
+
+When the AI recommends a stock, it outputs two things simultaneously:
+1. **Prose analysis** — reasoning in Minervini's style, book citations, risk warnings
+2. **JSON trade card** — machine-readable structured data with exact entry/stop/target
+
+The JSON card is extracted, stripped from the visible chat, and rendered as a visual card below the AI response.
+
+### JSON Schema
+
+```json
+{
+  "ticker": "HFCL",
+  "grade": "A",
+  "pattern": "VCP",
+  "entry_low": 214.48,
+  "entry_high": 218.77,
+  "stop_loss": 197.32,
+  "stop_pct": 8.0,
+  "target": 257.38,
+  "target_pct": 20.0,
+  "risk_reward": 2.5,
+  "timeframe": "4-8 weeks",
+  "reasoning": "Elite RS 99, vol ratio 0.34, -2.5% from 52wk high, all 8 criteria passed"
+}
+```
+
+### How Prices Are Computed
+
+The scanner stores each stock's `price` field (last traded price). The system prompt instructs the LLM:
+- `entry_low` = current price
+- `entry_high` = price × 1.02 (2% above for confirmation)
+- `stop_loss` = entry_low × (1 − stop_pct/100)
+- `target` = entry_low × (1 + target_pct/100)
+- `risk_reward` = target_pct / stop_pct
+
+### How Streaming Handles the JSON Block
+
+The JSON block appears at the end of the LLM response. During streaming:
+1. Text chunks are forwarded to the browser as they arrive
+2. When `\`\`\`json` is detected in the accumulated text, chunk forwarding stops
+3. The rest of the stream (JSON content) is buffered silently
+4. After streaming ends, `_extract_trade_cards()` parses the JSON
+5. A `{'type': 'cards', 'cards': [...]}` event is emitted
+6. The browser renders the visual trade cards
+
+Result: user sees clean prose appearing word by word, then trade cards appear at the end. No raw JSON ever shows in the chat.
+
+---
+
+## 22. How to Run — Complete Reference
+
+### Starting the System
+
+```bash
+# 1. Start the dashboard server
+/opt/homebrew/bin/python3.10 server.py
+
+# 2. Open dashboard
+open http://localhost:8765
+
+# 3. Start Langfuse observability (optional)
+cd langfuse && docker compose up -d
+open http://localhost:3000
+```
+
+### Daily Scan (Automated)
+Runs automatically at 8 PM via launchd. To trigger manually:
+```bash
+/opt/homebrew/bin/python3.10 daily_run.py
+```
+
+### Morning Brief (Manual)
+```bash
+/opt/homebrew/bin/python3.10 morning_brief.py
+# or click "🏹 Brief" button in dashboard
+```
+
+### Telegram Registration (One-Time)
+```bash
+/opt/homebrew/bin/python3.10 telegram_bot.py
+# Send /start to @GandivaScannerBot in Telegram within 2 minutes
+```
+
+### Build/Rebuild RAG Indexes
+```bash
+# Book RAG (run once, or after adding new books)
+/opt/homebrew/bin/python3.10 build_rag.py
+
+# History RAG (auto-runs after each scan — manual rebuild if needed)
+/opt/homebrew/bin/python3.10 build_history_rag.py
+```
+
+### MCP Server (Auto-managed by Claude Desktop)
+```bash
+# Test tools directly
+/opt/homebrew/bin/python3.10 mcp_server.py
+
+# Claude Desktop config: ~/Library/Application Support/Claude/claude_desktop_config.json
+```
+
+### Scheduler Management
+```bash
+# Check scheduler status
+launchctl list | grep gandiva
+
+# Stop auto-scan
+launchctl unload ~/Library/LaunchAgents/com.gandiva.scanner.plist
+
+# Re-enable
+launchctl load ~/Library/LaunchAgents/com.gandiva.scanner.plist
+
+# View logs
+tail -f logs/daily_run.log
+```
+
+### Environment Variables (.env)
+```
+GROQ_API_KEY=gsk_...           # Groq cloud LLM (free tier)
+TELEGRAM_BOT_TOKEN=...         # @GandivaScannerBot token
+LANGFUSE_PUBLIC_KEY=pk-lf-...  # Langfuse observability
+LANGFUSE_SECRET_KEY=sk-lf-...  # Langfuse observability
+LANGFUSE_HOST=http://localhost:3000  # Self-hosted Langfuse
+```
+
+---
+
+## 23. Portfolio Pitch — How to Present This Project
+
+### One-Line Summary
+> *"An AI-powered NSE stock scanner that identifies Minervini VCP setups, validates them against his published methodology using RAG, delivers daily trade briefs via Telegram, and exposes live market data to any AI client via MCP — running entirely on a local Mac with zero ongoing cost."*
+
+### What Makes It Technically Impressive
+
+1. **RAG over a domain-specific book** — not just generic LLM, but grounded in Minervini's actual methodology with page citations
+2. **Self-hosted vector database** — ChromaDB running locally, 1,203 book chunks + growing scan history
+3. **Agentic pipeline** — morning brief chains 5 steps autonomously: scan → validate → analyse → format → deliver
+4. **MCP server** — scanner exposed as a standardised AI tool, live-demonstrated with Claude Desktop calling real NSE data
+5. **Production observability** — every AI call traced in self-hosted Langfuse with latency, token usage, RAG retrieval quality
+6. **LLM provider abstraction** — Groq cloud primary, Ollama local fallback, zero code change to switch
+7. **Streaming UI** — SSE-based word-by-word streaming with structured trade cards appearing after prose
+
+### Costs
+- **Monthly cost: ₹0** (Groq free tier, self-hosted Langfuse, local Ollama fallback)
+- **Worst case if Groq charges: ~₹600/year** (can eliminate entirely with Ollama)
+
+### Tech Stack (Interview Cheat Sheet)
+
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| Data | yfinance + NSE | Free real-time Indian market data |
+| Storage | JSON files + JSONL | Simple, zero infrastructure |
+| Vector DB | ChromaDB (local) | Free, no server needed, HNSW index |
+| Embeddings | all-MiniLM-L6-v2 | 384-dim, runs on CPU, 90MB |
+| LLM (cloud) | Groq / Llama 3.3 70B | Free tier, fast LPU hardware |
+| LLM (local) | Ollama / Llama 3.2 3B | Offline fallback, zero cost |
+| Streaming | SSE (Server-Sent Events) | Browser-native, no WebSocket needed |
+| Observability | Langfuse v2 (Docker) | Open-source, self-hosted, free |
+| Automation | macOS launchd | Reliable Mac scheduler, survives reboots |
+| AI Protocol | MCP (Model Context Protocol) | Anthropic's 2024 open standard |
+| Alerts | Telegram Bot API | Free, instant, no server needed |
+| UI | Vanilla HTML/JS | Zero framework dependencies |
+
+---
+
+## 24. Features Built — Status Tracker
 
 | # | Feature | Status | Files |
 |---|---------|--------|-------|
@@ -925,14 +1671,16 @@ Free tier with no credit card required. For a personal portfolio project running
 | ✅ | Book RAG (Trade Like a Stock Market Wizard) | Complete | build_rag.py, ai_agent.py |
 | ✅ | Scan History RAG (temporal queries) | Complete | build_history_rag.py, ai_agent.py |
 | ✅ | Minervini VCP Validator (all 16 screens) | Complete | ai_agent.py |
-| ✅ | Streaming Responses | Complete | ai_agent.py, server.py, dashboard.html |
-| ⏳ | Structured Trade Cards (JSON output) | Pending | ai_agent.py |
-| ⏳ | AI Evals & Observability (Langfuse) | Pending | new file |
-| ⏳ | MCP Server | Pending | new file |
-| ⏳ | Daily AI Morning Brief | Pending | new file |
+| ✅ | Streaming Responses (SSE, word by word) | Complete | ai_agent.py, server.py, dashboard.html |
+| ✅ | Agentic Morning Brief (ReAct pipeline) | Complete | morning_brief.py |
+| ✅ | Telegram Bot (Gandiva @GandivaScannerBot) | Complete | telegram_bot.py |
+| ✅ | Daily Scheduler (launchd, 8 PM) | Complete | daily_run.py, com.gandiva.scanner.plist |
+| ✅ | Structured Trade Cards (JSON output) | Complete | ai_agent.py, dashboard.html |
+| ✅ | AI Observability (self-hosted Langfuse + Docker) | Complete | ai_agent.py, langfuse/ |
+| ✅ | MCP Server (Model Context Protocol, 6 tools) | Complete | mcp_server.py |
+| ✅ | Local LLM Fallback (Ollama, zero cost) | Complete | ai_agent.py |
 | ⏳ | Multimodal Chart Vision | Pending | needs GPT-4o |
-| ⏳ | Local LLMs (Ollama) | Pending | ai_agent.py |
 
 ---
 
-*This document is updated as each feature is built. Last updated: 2026-07-04*
+*Last updated: 2026-07-05*

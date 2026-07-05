@@ -561,6 +561,7 @@ python3 scanner.py</pre>
         <div class="sb-scan-dot"></div>
         <div class="sb-scan" id="sb-scan-time">Loading...</div>
         <button id="scan-btn" onclick="startScan()" title="Fetch live data and re-scan all stocks">Scan Now</button>
+        <button id="brief-btn" onclick="runMorningBrief()" title="Generate Minervini morning brief + send Telegram alert" style="margin-left:6px;background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:.78em;cursor:pointer;font-weight:600;letter-spacing:.3px">&#127305; Brief</button>
       </div>
     </div>
     <div class="sb-body">
@@ -1099,6 +1100,43 @@ var CRITERIA_LABELS = {
 // ── SERVER MODE ───────────────────────────────────────────────────────────────
 var _serverMode = false;
 var _statusInterval = null;
+
+function runMorningBrief(){
+  var btn = document.getElementById('brief-btn');
+  btn.textContent = '⏳ Generating...';
+  btn.disabled = true;
+  fetch('/api/morning-brief', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({send_telegram: true})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data){
+    btn.textContent = '🏹 Brief';
+    btn.disabled = false;
+    if(data.error){
+      alert('Brief error: ' + data.error);
+    } else {
+      var msg = '✅ Morning brief generated!\n\n';
+      msg += data.telegram_sent ? '📱 Telegram alert sent to GandivaScannerBot.' : '⚠️ Telegram not configured — send /start to @GandivaScannerBot first.';
+      msg += '\n\nHTML saved to:\n' + (data.html_path || 'exports/Briefs/');
+      alert(msg);
+    }
+  })
+  .catch(function(e){
+    btn.textContent = '🏹 Brief';
+    btn.disabled = false;
+    alert('Error: ' + e);
+  });
+}
+
+function registerTelegram(){
+  fetch('/api/register-telegram', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    alert('📱 ' + (d.message || d.status) + '\n\nOpen Telegram → search @GandivaScannerBot → send /start');
+  });
+}
 
 function startScan(){
   var btn = document.getElementById('scan-btn');
@@ -5514,6 +5552,41 @@ function scrollRowIntoView(ticker){
   border-radius:6px;border:1px solid rgba(99,102,241,.2);
   background:rgba(99,102,241,.05);transition:background .15s;text-align:left;
 }
+/* ── Trade Cards ─────────────────────────────────────────────────────────── */
+.trade-cards-wrap{display:flex;flex-direction:column;gap:8px;width:100%;align-self:flex-start;margin-top:2px}
+.trade-card{
+  background:linear-gradient(135deg,rgba(22,27,34,.98),rgba(13,17,23,.95));
+  border:1px solid rgba(99,102,241,.25);border-radius:10px;
+  padding:11px 13px;font-size:11.5px;position:relative;overflow:hidden;
+}
+.trade-card::before{
+  content:'';position:absolute;top:0;left:0;width:3px;height:100%;
+  background:linear-gradient(180deg,#6366f1,#8b5cf6);border-radius:2px 0 0 2px;
+}
+.tc-header{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.tc-ticker{font-size:13px;font-weight:700;color:#e2e8f0;letter-spacing:.5px}
+.tc-grade{
+  font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;
+  background:rgba(34,197,94,.15);color:#4ade80;border:1px solid rgba(34,197,94,.3);
+}
+.tc-pattern{
+  font-size:10px;padding:2px 7px;border-radius:8px;
+  background:rgba(99,102,241,.15);color:#a5b4fc;border:1px solid rgba(99,102,241,.25);
+}
+.tc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px}
+.tc-cell{background:rgba(255,255,255,.03);border-radius:6px;padding:5px 7px}
+.tc-label{font-size:9.5px;color:#6e7681;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.tc-value{font-size:12px;font-weight:600;color:#e2e8f0}
+.tc-value.green{color:#4ade80}
+.tc-value.red{color:#f87171}
+.tc-value.yellow{color:#fbbf24}
+.tc-rr{
+  display:inline-block;font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:6px;
+  background:rgba(251,191,36,.12);color:#fbbf24;border:1px solid rgba(251,191,36,.2);
+  margin-right:6px;
+}
+.tc-reason{font-size:10.5px;color:#8b949e;line-height:1.4;margin-top:6px;border-top:1px solid rgba(255,255,255,.05);padding-top:6px}
 .ai-sug:hover{background:rgba(99,102,241,.12)}
 </style>
 
@@ -5665,6 +5738,8 @@ function scrollRowIntoView(ticker){
                 fullText += evt.text;
                 botDiv.textContent = fullText + '▍';
                 _msgs.scrollTop = _msgs.scrollHeight;
+              } else if(evt.type === 'cards' && evt.cards && evt.cards.length) {
+                _renderTradeCards(evt.cards);
               } else if(evt.type === 'error') {
                 botDiv.textContent = 'Error: ' + evt.text;
                 botDiv.classList.remove('ai-loading');
@@ -5684,6 +5759,42 @@ function scrollRowIntoView(ticker){
       _setbusy(false);
     });
   };
+
+  function _renderTradeCards(cards) {
+    if(!_msgs) _init();
+    var wrap = document.createElement('div');
+    wrap.className = 'trade-cards-wrap';
+    cards.forEach(function(c) {
+      var rr   = (c.risk_reward || 0).toFixed(1);
+      var rrCl = rr >= 3 ? 'green' : rr >= 2 ? 'yellow' : 'red';
+      var entry = c.entry_low && c.entry_high
+        ? '₹' + c.entry_low.toLocaleString('en-IN') + '–' + c.entry_high.toLocaleString('en-IN')
+        : (c.entry_low ? '₹' + Number(c.entry_low).toLocaleString('en-IN') : '—');
+      var stop   = c.stop_loss  ? '₹' + Number(c.stop_loss).toLocaleString('en-IN')  : '—';
+      var target = c.target     ? '₹' + Number(c.target).toLocaleString('en-IN')     : '—';
+      var stopPct   = c.stop_pct   ? '-' + c.stop_pct.toFixed(1)  + '%' : '';
+      var targetPct = c.target_pct ? '+' + c.target_pct.toFixed(1) + '%' : '';
+      var card = document.createElement('div');
+      card.className = 'trade-card';
+      card.innerHTML =
+        '<div class="tc-header">' +
+          '<span class="tc-ticker">' + (c.ticker||'') + '</span>' +
+          '<span class="tc-grade">Grade-' + (c.grade||'A') + '</span>' +
+          '<span class="tc-pattern">' + (c.pattern||'VCP') + '</span>' +
+          '<span class="tc-rr">R:R ' + rr + 'x</span>' +
+          '<span style="font-size:10px;color:#6e7681">' + (c.timeframe||'') + '</span>' +
+        '</div>' +
+        '<div class="tc-grid">' +
+          '<div class="tc-cell"><div class="tc-label">Entry Zone</div><div class="tc-value">' + entry + '</div></div>' +
+          '<div class="tc-cell"><div class="tc-label">Stop Loss ' + stopPct + '</div><div class="tc-value red">' + stop + '</div></div>' +
+          '<div class="tc-cell"><div class="tc-label">Target ' + targetPct + '</div><div class="tc-value green">' + target + '</div></div>' +
+        '</div>' +
+        (c.reasoning ? '<div class="tc-reason">🏹 ' + c.reasoning + '</div>' : '');
+      wrap.appendChild(card);
+    });
+    _msgs.appendChild(wrap);
+    _msgs.scrollTop = _msgs.scrollHeight;
+  }
 
   function _appendMsg(text, role, loading){
     if(!_msgs) _init();

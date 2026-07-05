@@ -156,6 +156,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_ai_stream()
         elif self.path == '/api/ai/chat':
             self._handle_ai_chat()
+        elif self.path == '/api/morning-brief':
+            self._handle_morning_brief()
+        elif self.path == '/api/register-telegram':
+            self._handle_register_telegram()
         elif self.path == '/api/save-csv':
             try:
                 length = int(self.headers.get('Content-Length', 0))
@@ -209,6 +213,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
+    def _handle_morning_brief(self):
+        """Run agentic morning brief — save HTML + send Telegram."""
+        if not GROQ_API_KEY:
+            self._send_json({'error': 'GROQ_API_KEY not set in .env'}, status=500)
+            return
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body   = json.loads(self.rfile.read(length)) if length else {}
+            send_tg = body.get('send_telegram', True)
+            from morning_brief import run_morning_brief
+            html_path, tg_sent = run_morning_brief(send_telegram=send_tg)
+            self._send_json({
+                'status':        'done',
+                'html_path':     html_path,
+                'telegram_sent': tg_sent,
+            })
+        except Exception as e:
+            self._send_json({'error': str(e)}, status=500)
+
+    def _handle_register_telegram(self):
+        """Start polling for /start message to register chat_id."""
+        def _poll():
+            from telegram_bot import register_via_polling
+            register_via_polling(timeout_sec=120)
+        import threading
+        threading.Thread(target=_poll, daemon=True).start()
+        self._send_json({'status': 'polling', 'message':
+            'Send /start to @GandivaScannerBot in Telegram within 2 minutes.'})
+
     def _handle_ai_chat(self):
         if not GROQ_API_KEY:
             self._send_json({'error': 'GROQ_API_KEY not set in .env file'}, status=500)
@@ -221,8 +254,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({'error': 'Empty message'}, status=400)
                 return
             from ai_agent import run_agent
-            answer, tools_used = run_agent(message, GROQ_API_KEY)
-            self._send_json({'answer': answer, 'tools_used': tools_used})
+            answer, tools_used, cards = run_agent(message, GROQ_API_KEY)
+            self._send_json({'answer': answer, 'tools_used': tools_used, 'cards': cards})
         except Exception as e:
             self._send_json({'error': str(e)}, status=500)
 
