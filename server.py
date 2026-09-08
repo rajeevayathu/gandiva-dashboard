@@ -143,7 +143,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._serve_status()
         elif self.path in ('/', '/dashboard.html'):
             self.path = '/dashboard.html'
-            super().do_GET()
+            # Serve dashboard.html directly with no-cache so browsers always get the latest
+            import os as _os
+            _fpath = _os.path.join(BASE_DIR, 'dashboard.html')
+            try:
+                with open(_fpath, 'rb') as _fh:
+                    _data = _fh.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
+                self.send_header('Content-Length', str(len(_data)))
+                self.end_headers()
+                self.wfile.write(_data)
+            except Exception:
+                super().do_GET()
         else:
             super().do_GET()
 

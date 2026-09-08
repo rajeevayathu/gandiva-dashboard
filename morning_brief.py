@@ -71,8 +71,11 @@ def _load_results():
 def _collect_candidates(results):
     """Collect unique stocks appearing across all screens, annotated with which screens."""
     seen   = {}
+    screens_data = results.get('screens', results)  # support both old flat and new nested format
     for key in ALL_SCREENS:
-        stocks = results.get(key, [])
+        raw = screens_data.get(key, [])
+        # new format: {'label':..., 'stocks': [...]}
+        stocks = raw.get('stocks', []) if isinstance(raw, dict) else raw
         if not isinstance(stocks, list):
             continue
         label = SCREEN_LABELS.get(key, key)
@@ -89,52 +92,104 @@ def _collect_candidates(results):
 
 
 def _regime_summary(results):
-    regime = results.get('regime', {})
-    if not regime:
+    ma = results.get('market_analysis', {})
+    if not ma:
         return 'Regime data not available.'
-    label   = regime.get('label', 'Unknown')
-    nifty50 = regime.get('nifty50_pct_above_200ma', 'N/A')
-    breadth = regime.get('breadth_label', '')
+    label       = ma.get('regime', 'Unknown')
+    nifty_close = ma.get('nifty_close', 'N/A')
+    trend       = ma.get('trend', '')
+    deploy      = ma.get('deploy_pct', '')
+    action_note = ma.get('action', '')[:120] if ma.get('action') else ''
     return (f'Market Regime: *{label}*  |  '
-            f'Nifty50 stocks above 200MA: {nifty50}%  |  '
-            f'Breadth: {breadth}')
+            f'Nifty: {nifty_close}  |  '
+            f'Trend: {trend}  |  '
+            f'Deploy: {deploy}%\n_{action_note}_')
 
 
 def _run_agent_brief(candidates, regime_text, results):
-    """Use ai_agent context stuffing + LLM to write the morning brief."""
-    from ai_agent import run_agent
-    # Build a rich context message for the agent
-    screen_counts = results.get('meta', {})
-    top_stocks = []
-    for ticker, info in list(candidates.items())[:20]:
+    """Write the morning brief via a direct, lightweight LLM call (no RAG pipeline)."""
+    ma = results.get('market_analysis', {})
+    screens_data = results.get('screens', {})
+
+    # Grade-A candidates: in VCP + full_template, sorted by multi-screen count
+    vcp_tickers = {
+        s.get('ticker') for s in
+        screens_data.get('vcp_setup', {}).get('stocks', [])
+    }
+    ranked = sorted(candidates.items(), key=lambda x: -len(x[1]['screens']))
+
+    grade_a, other = [], []
+    for ticker, info in ranked:
         s = info['stock']
-        screens = ', '.join(info['screens'][:3])
-        rs  = s.get('rs_rating', 'N/A')
-        vol = s.get('rel_vol', s.get('volume_ratio', 'N/A'))
-        top_stocks.append(f'{ticker} (RS={rs}, RelVol={vol}, screens: {screens})')
+        rs   = s.get('rs_rank', '?')
+        price = s.get('price', '?')
+        hi_pct = s.get('pct_from_high')
+        vol  = s.get('vol_ratio')
+        pivot = s.get('pivot_high')
+        vcp_d = s.get('vcp_last_daily', '')
+        scr  = ', '.join(info['screens'][:4])
+        hi_str  = f"{hi_pct:+.1f}%" if hi_pct is not None else '?'
+        vol_str = f"{vol:.2f}x"     if vol    is not None else '?'
+        line = (f"{ticker} | ₹{price} | RS {rs} | {hi_str} from 52wk hi | "
+                f"vol {vol_str} | pivot ₹{pivot} | VCP:{vcp_d or 'none'} | screens: {scr}")
+        if ticker in vcp_tickers and len(info['screens']) >= 2:
+            grade_a.append(line)
+        elif len(other) < 10:
+            other.append(line)
 
-    stock_list = '\n'.join(f'- {x}' for x in top_stocks) if top_stocks else 'No candidates found.'
+    multi_screen = [(t, len(i['screens'])) for t, i in ranked if len(i['screens']) >= 3][:8]
+    multi_str = '\n'.join(f"  {t}: {n} screens" for t, n in multi_screen) or '  None'
 
-    message = f"""Generate a Minervini-style morning brief for today {datetime.date.today()}.
+    prompt = f"""You are Gandiva, a Minervini-style stock scanner AI. Write a concise morning brief.
 
-{regime_text}
+DATE: {datetime.date.today().strftime('%A, %d %B %Y')}
+REGIME: {ma.get('regime','?')} | Nifty {ma.get('nifty_close','?')} | Trend: {ma.get('trend','?')}
+DEPLOY SIGNAL: {ma.get('deploy_pct','?')}% allocation | {(ma.get('action',''))[:200]}
 
-Top candidates appearing across multiple screens:
-{stock_list}
+GRADE-A VCP SETUPS (VCP + Full Template, 2+ screens):
+{chr(10).join(grade_a[:6]) or 'None today'}
 
-Total stocks scanned across all 16 screens: {len(candidates)} unique candidates.
+HIGH-CONFLUENCE (3+ screens):
+{multi_str}
 
-Please:
-1. State the market regime and what it means for position sizing
-2. Identify the top 3-5 Grade-A VCP setups with entry zones, stops, and targets
-3. Call out any stocks appearing in 3+ screens (high-confluence setups)
-4. Give a risk management reminder based on the regime
-5. End with a one-line Minervini quote from the book relevant to today's conditions
+TOTAL CANDIDATES: {len(candidates)} unique across all screens
 
-Keep the response concise, actionable, and formatted for a trader reading it at 9 AM."""
+Write the brief in this format — keep it under 350 words total:
+1. MARKET REGIME — what it means for sizing (2 sentences)
+2. TOP SETUPS — for each Grade-A: entry zone, stop (8% below entry), target, R:R (3-5 stocks)
+3. HIGH-CONFLUENCE — stocks in 3+ screens deserve priority (1-2 sentences)
+4. RISK NOTE — one practical rule for today's regime
+5. MINERVINI QUOTE — one relevant line from "Trade Like a Stock Market Wizard"
 
-    answer, tools_used, _ = run_agent(message, GROQ_API_KEY)
-    return answer, tools_used
+Be specific with numbers. No generic filler."""
+
+    if GROQ_API_KEY:
+        try:
+            from groq import Groq
+            client = Groq(api_key=GROQ_API_KEY)
+            resp = client.chat.completions.create(
+                model='llama-3.3-70b-versatile',
+                messages=[{'role': 'user', 'content': prompt}],
+                max_tokens=600,
+                temperature=0.4,
+            )
+            return resp.choices[0].message.content, ['direct_llm']
+        except Exception as e:
+            print(f'  Groq error: {e}')
+
+    # Ollama fallback
+    try:
+        from openai import OpenAI
+        client = OpenAI(base_url='http://localhost:11434/v1', api_key='ollama')
+        resp = client.chat.completions.create(
+            model='llama3.2',
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=600,
+            temperature=0.4,
+        )
+        return resp.choices[0].message.content, ['ollama_fallback']
+    except Exception as e:
+        return f'LLM unavailable: {e}', []
 
 
 def _format_telegram(brief_text, regime_text, date_str):

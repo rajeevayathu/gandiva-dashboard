@@ -191,9 +191,13 @@ def _history_stock_trend(ticker: str) -> str:
     for e in entries:
         scrs = ', '.join(e['screens'])
         vcp  = ('VCP-D ' if e['vcp_d'] else '') + ('VCP-W' if e['vcp_w'] else '')
+        rs    = e['rs']    if e['rs']    is not None else '?'
+        price = e['price'] if e['price'] is not None else '?'
+        pct   = f"{e['pct_hi']:+.1f}%" if e['pct_hi'] is not None else '?'
+        vol   = f"{e['vol']:.2f}x"     if e['vol']    is not None else '?'
         lines.append(
-            f"  {e['date']} | RS:{e['rs']} | ₹{e['price']} | "
-            f"base:{e['pct_hi']:+.1f}% | vol:{e['vol']:.2f}x | "
+            f"  {e['date']} | RS:{rs} | ₹{price} | "
+            f"base:{pct} | vol:{vol} | "
             f"{vcp or 'no-VCP'} | {e['passed']}/8 criteria | {scrs}"
         )
     return '\n'.join(lines)

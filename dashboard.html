@@ -6,43 +6,53 @@
 <title>AlphaEdge — NSE Minervini Scanner</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500&family=Syne:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="results_embed.js" onerror="window.SCAN_DATA=null"></script>
 <script src="results_us_embed.js" onerror="window.SCAN_DATA_US=null"></script>
 <script src="breadth_embed.js" onerror="window.BREADTH_DATA=null"></script>
 <script src="cci_history_embed.js" onerror="window.CCI_HISTORY_DATA=null"></script>
+<script src="ath_signals_embed.js" onerror="window.ATH_SIGNALS=null"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
 /* ── DESIGN TOKENS ─────────────────────────────────────────────────────────── */
 :root{
-  --bg:       #060b14;
-  --surface:  #0d1526;
-  --card:     #111d2e;
-  --card2:    #162035;
+  --bg:       #060a12;
+  --surface:  #0b1220;
+  --card:     #0f1929;
+  --card2:    #131f31;
   --border:   rgba(255,255,255,0.07);
-  --border2:  rgba(255,255,255,0.12);
+  --border2:  rgba(255,255,255,0.13);
   --accent:   #2563eb;
   --accent-d: #1d4ed8;
   --muted:    #94a3b8;
-  --green:    #10b981;
+  --green:    #059669;
+  --green-hi: #10b981;
   --red:      #f87171;
+  --red-hi:   #ef4444;
   --amber:    #d97706;
+  --amber-hi: #f59e0b;
   --purple:   #a78bfa;
   --cyan:     #06b6d4;
-  --text:     #f0f4ff;
-  --text2:    #94a3b8;
-  --text3:    #4b5a6e;
-  --dim:      #1e2d45;
-  --sw:       248px;
-  --cw:       420px;
+  --text:     #eef2ff;
+  --text2:    #8fa3bc;
+  --text3:    #3d5269;
+  --dim:      #1a2840;
+  --sw:       252px;
+  --cw:       430px;
   --radius:   10px;
   --radius-sm:6px;
+  /* glow tokens */
+  --glow-green:  0 0 10px rgba(5,150,105,0.45);
+  --glow-red:    0 0 10px rgba(239,68,68,0.4);
+  --glow-amber:  0 0 8px  rgba(245,158,11,0.4);
+  --glow-accent: 0 0 12px rgba(37,99,235,0.45);
+  --glow-cyan:   0 0 10px rgba(6,182,212,0.4);
 }
 /* ── RESET ─────────────────────────────────────────────────────────────────── */
 *{box-sizing:border-box;margin:0;padding:0}
 body{
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-family:'Fira Sans',system-ui,-apple-system,sans-serif;
   background:var(--bg);
   color:var(--text);
   font-size:13px;
@@ -50,6 +60,7 @@ body{
   height:100vh;
   overflow:hidden;
   -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
 }
 #app{display:flex;height:100vh}
 
@@ -66,23 +77,23 @@ body{
 .sb-head{
   padding:18px 16px 14px;
   border-bottom:1px solid var(--border);
-  background:linear-gradient(180deg,rgba(59,130,246,0.06) 0%,transparent 100%);
+  background:linear-gradient(160deg,rgba(5,150,105,0.08) 0%,rgba(37,99,235,0.05) 60%,transparent 100%);
 }
 .sb-logo{display:flex;align-items:center;gap:9px;margin-bottom:10px}
 .sb-logo-icon{
   width:32px;height:32px;border-radius:8px;
-  background:linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%);
+  background:linear-gradient(135deg,#059669 0%,#0ea5e9 100%);
   display:flex;align-items:center;justify-content:center;
   font-size:15px;flex-shrink:0;
-  box-shadow:0 4px 12px rgba(59,130,246,0.35);
+  box-shadow:0 4px 14px rgba(5,150,105,0.4),0 0 0 1px rgba(5,150,105,0.2);
 }
 .sb-logo-text{display:flex;flex-direction:column}
 .sb-title{font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.3px}
 .sb-sub{font-size:10px;color:var(--text2);font-weight:500;letter-spacing:.1px}
 .sb-status-row{display:flex;align-items:center;gap:6px}
 .sb-scan{font-size:10px;color:var(--text2);flex:1;line-height:1.3}
-.sb-scan-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);flex-shrink:0;animation:pulse-dot 2s ease-in-out infinite}
-@keyframes pulse-dot{0%,100%{opacity:1;box-shadow:0 0 4px var(--green)}50%{opacity:.5;box-shadow:0 0 10px var(--green)}}
+.sb-scan-dot{width:6px;height:6px;border-radius:50%;background:var(--green-hi);box-shadow:0 0 6px var(--green-hi);flex-shrink:0;animation:pulse-dot 2s ease-in-out infinite}
+@keyframes pulse-dot{0%,100%{opacity:1;box-shadow:0 0 5px var(--green-hi),0 0 12px rgba(5,150,105,0.4)}50%{opacity:.5;box-shadow:0 0 12px var(--green-hi),0 0 20px rgba(5,150,105,0.5)}}
 #scan-btn{
   display:none;padding:4px 11px;
   background:var(--accent);
@@ -96,8 +107,9 @@ body{
 .sb-body{flex:1;overflow-y:auto;padding:8px 0 12px}
 .sb-section{
   font-size:9px;font-weight:700;color:var(--text3);
-  text-transform:uppercase;letter-spacing:1px;
+  text-transform:uppercase;letter-spacing:1.2px;
   padding:14px 16px 5px;
+  font-family:'Fira Sans',sans-serif;
 }
 .sb-section:first-child{padding-top:8px}
 
@@ -114,12 +126,13 @@ body{
 .sb-btn span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sb-btn:hover{background:rgba(37,99,235,0.07);color:var(--text);border-left-color:rgba(37,99,235,0.35)}
 .sb-btn.active{
-  background:rgba(37,99,235,0.1);
+  background:linear-gradient(90deg,rgba(37,99,235,0.12) 0%,rgba(37,99,235,0.04) 100%);
   color:#93c5fd;border-left-color:var(--accent);font-weight:600;
+  box-shadow:inset 0 0 0 0.5px rgba(37,99,235,0.1);
 }
 
 .sb-cnt{
-  font-family:'DM Mono',monospace;font-size:11px;font-weight:500;
+  font-family:'Fira Code',monospace;font-size:11px;font-weight:500;
   padding:1px 6px;border-radius:20px;
   background:rgba(37,99,235,0.15);
   color:var(--accent);min-width:22px;text-align:center;
@@ -168,6 +181,92 @@ body{
 .sb-btn.new-scan-btn:hover{background:rgba(250,204,21,.07)!important}
 .sb-btn.new-scan-btn.active{background:linear-gradient(90deg,rgba(250,204,21,0.12),rgba(250,204,21,0.05))!important;color:#fef08a!important;border-left-color:#fde047!important}
 .sb-cnt.new-scan-cnt{background:rgba(250,204,21,0.15);color:#fde047}
+.sb-btn.newhigh-btn{color:#34d399!important}
+.sb-btn.newhigh-btn:hover{background:rgba(52,211,153,.07)!important}
+.sb-btn.newhigh-btn.active{background:linear-gradient(90deg,rgba(52,211,153,0.12),rgba(52,211,153,0.05))!important;color:#a7f3d0!important;border-left-color:#34d399!important}
+.sb-cnt.newhigh-cnt{background:rgba(52,211,153,0.15);color:#34d399}
+.sb-btn.ath-btn{color:#fbbf24!important}
+.sb-btn.ath-btn:hover{background:rgba(251,191,36,.07)!important}
+.sb-btn.ath-btn.active{background:linear-gradient(90deg,rgba(251,191,36,0.12),rgba(251,191,36,0.05))!important;color:#fde68a!important;border-left-color:#fbbf24!important}
+.sb-cnt.ath-cnt{background:rgba(251,191,36,0.15);color:#fbbf24}
+/* ── RS LINE TRENDING ─────────────────────────────────────────────────────────── */
+.sb-btn.rs-trend-btn{color:#a3e635!important}
+.sb-btn.rs-trend-btn:hover{background:rgba(163,230,53,.07)!important}
+.sb-btn.rs-trend-btn.active{background:linear-gradient(90deg,rgba(163,230,53,0.13),rgba(163,230,53,0.04))!important;color:#d9f99d!important;border-left-color:#a3e635!important}
+.sb-cnt.rs-trend-cnt{background:rgba(163,230,53,0.15);color:#a3e635}
+/* ── WEEKLY PIVOT ─────────────────────────────────────────────────────────────── */
+.sb-btn.wpivot-btn{color:#fb7185!important}
+.sb-btn.wpivot-btn:hover{background:rgba(251,113,133,.07)!important}
+.sb-btn.wpivot-btn.active{background:linear-gradient(90deg,rgba(251,113,133,0.13),rgba(251,113,133,0.04))!important;color:#fda4af!important;border-left-color:#fb7185!important}
+.sb-cnt.wpivot-cnt{background:rgba(251,113,133,0.15);color:#fb7185}
+/* ── DAILY PIVOT ──────────────────────────────────────────────────────────────── */
+.sb-btn.dpivot-btn{color:#38bdf8!important}
+.sb-btn.dpivot-btn:hover{background:rgba(56,189,248,.07)!important}
+.sb-btn.dpivot-btn.active{background:linear-gradient(90deg,rgba(56,189,248,0.13),rgba(56,189,248,0.04))!important;color:#7dd3fc!important;border-left-color:#38bdf8!important}
+.sb-cnt.dpivot-cnt{background:rgba(56,189,248,0.15);color:#38bdf8}
+/* ── NEW-SINCE-LAST-SCAN SUBSECTION ─────────────────────────────────────────── */
+.new-badge{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(163,230,53,0.18);color:#a3e635;border:1px solid rgba(163,230,53,0.35);margin-left:4px;letter-spacing:.2px;vertical-align:middle}
+#new-subsection{background:rgba(163,230,53,0.04);border-bottom:2px solid rgba(163,230,53,0.25);flex-shrink:0}
+#new-subsection .ns-hdr{padding:8px 20px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(163,230,53,0.15)}
+#new-subsection .ns-count{font-size:12px;font-weight:700;color:#a3e635;flex:1}
+.ns-dl-btn{padding:4px 14px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;color:#a3e635;border:1px solid rgba(163,230,53,0.4);background:rgba(163,230,53,0.1)}
+.ns-dl-btn:hover{background:rgba(163,230,53,0.2)}
+.ns-toggle-btn{padding:4px 12px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--muted);border:1px solid var(--border);background:none}
+#new-subsection .ns-body{overflow-x:auto;max-height:240px;overflow-y:auto}
+.ns-table{width:100%;border-collapse:collapse;font-size:11px}
+.ns-table thead th{padding:5px 12px;text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);background:rgba(163,230,53,0.07);border-bottom:1px solid rgba(163,230,53,0.18);position:sticky;top:0;white-space:nowrap}
+.ns-table thead th:first-child{text-align:left;padding-left:20px}
+.ns-table tbody td{padding:5px 12px;border-bottom:1px solid rgba(255,255,255,0.04);text-align:center}
+.ns-table tbody td:first-child{text-align:left;padding-left:20px}
+.ns-table tbody tr:hover td{background:rgba(163,230,53,0.06);cursor:pointer}
+/* ── BREAKOUT ALERT ──────────────────────────────────────────────────────────── */
+.sb-btn.alert-btn{color:#f97316!important;font-weight:700!important}
+.sb-btn.alert-btn:hover{background:rgba(249,115,22,.08)!important}
+.sb-btn.alert-btn.active{background:linear-gradient(90deg,rgba(249,115,22,0.14),rgba(249,115,22,0.05))!important;color:#fb923c!important;border-left-color:#f97316!important}
+.sb-cnt.alert-cnt{background:rgba(249,115,22,0.18);color:#fb923c}
+.sb-cnt.alert-cnt.has-alerts{animation:alert-pulse 2s ease-in-out infinite}
+@keyframes alert-pulse{0%,100%{box-shadow:0 0 0 0 rgba(249,115,22,0)}50%{box-shadow:0 0 0 5px rgba(249,115,22,0.2)}}
+.alert-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin:0 14px 10px;transition:border-color .15s;cursor:pointer}
+.alert-card:hover{border-color:rgba(249,115,22,.35)}
+.alert-card.breakout{border-left:3px solid #f97316}
+.alert-card.watchlist{border-left:3px solid #d97706}
+.alert-card-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.alert-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px;flex-shrink:0}
+.alert-badge.breakout{background:rgba(249,115,22,.15);color:#f97316}
+.alert-badge.watchlist{background:rgba(217,119,6,.15);color:#d97706}
+.alert-ticker{font-size:15px;font-weight:700;color:var(--text);font-family:'Fira Code',monospace}
+.alert-rs{padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600;font-family:'Fira Code',monospace}
+.alert-note{font-size:11px;color:var(--muted);margin-bottom:6px}
+.alert-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.alert-metric{background:var(--card2);border-radius:6px;padding:6px 8px}
+.alert-metric .lbl{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px}
+.alert-metric .val{font-size:13px;font-weight:600;color:var(--text);font-family:'Fira Code',monospace}
+.alert-metric .val.g{color:var(--green-hi)}.alert-metric .val.o{color:#fb923c}.alert-metric .val.r{color:var(--red)}
+.alert-trending{font-size:10px;font-weight:600;color:var(--green-hi)}.alert-flat{font-size:10px;color:var(--muted)}
+.alert-tv-link{margin-top:8px;display:inline-block;font-size:10px;color:var(--accent);text-decoration:none;font-weight:600}
+.alert-tv-link:hover{color:#93c5fd}
+/* ── V4 LIVE SIGNAL ────────────────────────────────────────────────────────── */
+.sb-btn.v4sig-btn{color:#22d3ee!important;font-weight:700!important}
+.sb-btn.v4sig-btn:hover{background:rgba(34,211,238,.08)!important}
+.sb-btn.v4sig-btn.active{background:linear-gradient(90deg,rgba(34,211,238,0.14),rgba(34,211,238,0.05))!important;color:#67e8f9!important;border-left-color:#22d3ee!important}
+.sb-cnt.v4sig-cnt{background:rgba(34,211,238,0.18);color:#67e8f9}
+.sb-cnt.v4sig-cnt.has-signals{animation:v4sig-pulse 2s ease-in-out infinite}
+@keyframes v4sig-pulse{0%,100%{box-shadow:0 0 0 0 rgba(34,211,238,0)}50%{box-shadow:0 0 0 5px rgba(34,211,238,0.25)}}
+.v4sig-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:13px 15px;margin:0 14px 12px;transition:border-color .15s}
+.v4sig-card:hover{border-color:rgba(34,211,238,.35)}
+.v4sig-card.breakout{border-left:4px solid #22d3ee}
+.v4sig-card.setup{border-left:4px solid #0ea5e9}
+.v4sig-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.v4sig-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px;flex-shrink:0}
+.v4sig-badge.breakout{background:rgba(34,211,238,.15);color:#22d3ee}
+.v4sig-badge.setup{background:rgba(14,165,233,.15);color:#38bdf8}
+.v4sig-ticker{font-size:16px;font-weight:700;color:var(--text);font-family:'Fira Code',monospace}
+.v4sig-note{font-size:11px;color:var(--muted);margin-bottom:7px;line-height:1.4}
+.v4sig-divider{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin:8px 0 5px;padding-top:7px;border-top:1px solid rgba(255,255,255,0.07)}
+.v4sig-quality{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:rgba(34,211,238,0.12);color:#22d3ee}
+.highs-chip{background:none;border:1px solid var(--border2);color:var(--text2);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:600;cursor:pointer;transition:all .13s;white-space:nowrap;font-family:inherit}
+.highs-chip:hover{border-color:var(--green-hi);color:var(--green-hi)}
+.highs-chip.active{background:rgba(5,150,105,0.14);border-color:var(--green);color:var(--green-hi)}
 .ck-badge{display:inline-block;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(251,146,60,0.2);color:#fb923c;vertical-align:middle;margin-left:4px;letter-spacing:.04em}
 
 /* ── TABLE PANE ─────────────────────────────────────────────────────────────── */
@@ -187,10 +286,10 @@ body{
   border:1px solid var(--border2);
   color:var(--text);border-radius:8px;
   padding:6px 12px;font-size:12px;outline:none;width:190px;
-  font-family:inherit;transition:border-color .15s;
+  font-family:'Fira Sans',sans-serif;transition:border-color .18s,box-shadow .18s,background .18s;
 }
 .filter-inp::placeholder{color:var(--text3)}
-.filter-inp:focus{border-color:var(--accent);background:rgba(59,130,246,0.05)}
+.filter-inp:focus{border-color:rgba(5,150,105,0.5);background:rgba(5,150,105,0.04);box-shadow:0 0 0 2px rgba(5,150,105,0.1)}
 .sort-lbl{font-size:11px;color:var(--text2);font-weight:500}
 .sort-sel{
   background:rgba(255,255,255,0.04);
@@ -206,18 +305,19 @@ body{
 }
 .sig-chip:hover{border-color:var(--amber);color:var(--amber)}
 .sig-chip.active{background:rgba(245,158,11,0.12);border-color:var(--amber);color:var(--amber)}
-.tp-body{flex:1;overflow-y:auto}
+.tp-body{flex:1;overflow-y:auto;overflow-x:auto}
 
 /* ── DOWNLOAD BUTTON ──────────────────────────────────────────────────────── */
 .dl-btn{
   display:inline-flex;align-items:center;gap:5px;
-  padding:5px 12px;border-radius:7px;
-  background:rgba(16,185,129,0.1);
-  border:1px solid rgba(16,185,129,0.3);
-  color:var(--green);font-size:11px;font-weight:600;
-  cursor:pointer;transition:all .15s;font-family:inherit;white-space:nowrap;
+  padding:5px 14px;border-radius:7px;
+  background:rgba(5,150,105,0.1);
+  border:1px solid rgba(5,150,105,0.3);
+  color:var(--green-hi);font-size:11px;font-weight:600;
+  cursor:pointer;transition:all .18s;font-family:'Fira Sans',sans-serif;white-space:nowrap;
+  letter-spacing:.02em;
 }
-.dl-btn:hover{background:rgba(16,185,129,0.18);border-color:var(--green)}
+.dl-btn:hover{background:rgba(5,150,105,0.18);border-color:var(--green-hi);box-shadow:var(--glow-green)}
 
 /* ── TABLE ──────────────────────────────────────────────────────────────────── */
 table{width:100%;border-collapse:collapse}
@@ -226,13 +326,14 @@ th{
   background:var(--surface);
   border-bottom:1px solid var(--border);
   padding:8px 12px;font-size:10px;font-weight:600;
-  color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;
+  color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;
+  font-family:'Fira Sans',sans-serif;
   white-space:nowrap;cursor:pointer;user-select:none;
-  transition:color .12s;
+  transition:color .15s;
   position:sticky;top:0;z-index:10;
 }
 th:hover{color:var(--text2)}
-th.sorted{color:var(--accent)}
+th.sorted{color:var(--cyan);text-shadow:var(--glow-cyan)}
 th .sort-ic{margin-left:3px;opacity:.6}
 td{
   padding:8px 12px;
@@ -240,28 +341,29 @@ td{
   vertical-align:middle;white-space:nowrap;
   transition:background .1s ease;
 }
-tr:hover td{background:rgba(37,99,235,0.05);cursor:pointer}
-tr.selected td{background:rgba(37,99,235,0.1)}
-tr.selected{border-left:2px solid var(--accent)}
-/* Ticker cell: DM Mono, cyan */
-td:first-child{font-family:'DM Mono',monospace;font-weight:500;color:var(--cyan)}
+tr:hover td{background:rgba(5,150,105,0.05);cursor:pointer}
+tr.selected td{background:rgba(37,99,235,0.09)}
+tr.selected{border-left:2px solid var(--green)}
+/* Ticker cell: Fira Code, cyan with glow */
+td:first-child{font-family:'Fira Code',monospace;font-weight:600;color:var(--cyan);letter-spacing:.02em}
+td:first-child:hover{text-shadow:var(--glow-cyan)}
 /* Subtle zebra */
 tbody tr:nth-child(even) td{background:rgba(255,255,255,0.012)}
 tbody tr:nth-child(even):hover td{background:rgba(37,99,235,0.06)}
 
 /* ── CHIPS ──────────────────────────────────────────────────────────────────── */
-.chip{display:inline-flex;align-items:center;padding:2px 5px;border-radius:5px;font-size:10px;font-weight:700;margin:1px}
-.chip-pass{background:rgba(16,185,129,0.12);color:#6ee7b7}
-.chip-fail{background:rgba(248,113,113,0.1);color:#fca5a5;opacity:.7}
-.chip-na{background:rgba(255,255,255,0.05);color:var(--text3)}
+.chip{display:inline-flex;align-items:center;padding:2px 6px;border-radius:5px;font-size:10px;font-weight:700;margin:1px;font-family:'Fira Code',monospace;letter-spacing:.01em}
+.chip-pass{background:rgba(5,150,105,0.15);color:#34d399;border:1px solid rgba(5,150,105,0.2)}
+.chip-fail{background:rgba(248,113,113,0.08);color:#fca5a5;opacity:.7;border:1px solid rgba(248,113,113,0.12)}
+.chip-na{background:rgba(255,255,255,0.04);color:var(--text3);border:1px solid rgba(255,255,255,0.06)}
 
 /* ── BADGES ─────────────────────────────────────────────────────────────────── */
-.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
-.bg{background:rgba(16,185,129,0.12);color:#6ee7b7}
-.br{background:rgba(248,113,113,0.1);color:#fca5a5}
-.ba{background:rgba(245,158,11,0.12);color:#fcd34d}
-.bc{background:rgba(34,211,238,0.1);color:#67e8f9}
-.bp{background:rgba(167,139,250,0.12);color:#c4b5fd}
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:20px;font-size:10px;font-weight:600;letter-spacing:.02em}
+.bg{background:rgba(5,150,105,0.14);color:#34d399;border:1px solid rgba(5,150,105,0.22)}
+.br{background:rgba(248,113,113,0.1);color:#fca5a5;border:1px solid rgba(248,113,113,0.18)}
+.ba{background:rgba(245,158,11,0.12);color:#fcd34d;border:1px solid rgba(245,158,11,0.2)}
+.bc{background:rgba(6,182,212,0.1);color:#67e8f9;border:1px solid rgba(6,182,212,0.18)}
+.bp{background:rgba(167,139,250,0.12);color:#c4b5fd;border:1px solid rgba(167,139,250,0.2)}
 
 /* ── CHART PANE ─────────────────────────────────────────────────────────────── */
 #chart-pane{
@@ -281,7 +383,7 @@ tbody tr:nth-child(even):hover td{background:rgba(37,99,235,0.06)}
   border-bottom:1px solid var(--border);
   background:var(--card);flex-shrink:0;
 }
-.cp-sym{font-family:'Syne',sans-serif;font-size:18px;font-weight:700;color:var(--cyan);letter-spacing:-.2px}
+.cp-sym{font-family:'Fira Sans',sans-serif;font-size:18px;font-weight:700;color:var(--cyan);letter-spacing:-.2px}
 .cp-meta{font-size:11px;color:var(--text2);margin-top:3px}
 .cp-stats{
   display:grid;grid-template-columns:repeat(3,1fr);
@@ -289,12 +391,14 @@ tbody tr:nth-child(even):hover td{background:rgba(37,99,235,0.06)}
   border-bottom:1px solid var(--border);flex-shrink:0;
 }
 .cp-s{
-  background:var(--card2);
+  background:linear-gradient(135deg,var(--card2) 0%,rgba(11,18,32,0.8) 100%);
   border:1px solid var(--border);
-  border-radius:6px;padding:8px 10px;text-align:center;
+  border-radius:8px;padding:8px 10px;text-align:center;
+  transition:border-color .2s,box-shadow .2s;
 }
-.cp-sl{font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;font-weight:500}
-.cp-sv{font-family:'DM Mono',monospace;font-size:15px;font-weight:500;color:var(--text);font-variant-numeric:tabular-nums}
+.cp-s:hover{border-color:rgba(5,150,105,0.3);box-shadow:0 0 12px rgba(5,150,105,0.08)}
+.cp-sl{font-family:'Fira Sans',sans-serif;font-size:9.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;font-weight:600}
+.cp-sv{font-family:'Fira Code',monospace;font-size:15px;font-weight:500;color:var(--text);font-variant-numeric:tabular-nums}
 .cp-criteria{
   padding:8px 12px;border-bottom:1px solid var(--border);
   display:flex;flex-wrap:wrap;gap:3px;flex-shrink:0;
@@ -319,18 +423,15 @@ tbody tr:nth-child(even):hover td{background:rgba(37,99,235,0.06)}
   color:#fca5a5;border-radius:5px;font-size:10px;font-weight:600;padding:2px 7px;margin:1px;
 }
 
-/* ── SCROLLBAR ──────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar{width:4px;height:4px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--dim);border-radius:4px}
-::-webkit-scrollbar-thumb:hover{background:var(--text3)}
+/* scrollbar defined in ENHANCED SCROLLBAR section below */
 
 /* ── NO DATA BANNER ─────────────────────────────────────────────────────────── */
 #no-data-banner{display:none;position:fixed;inset:0;background:var(--bg);z-index:1000;align-items:center;justify-content:center}
 #no-data-banner .box{
-  background:var(--card);border:1px solid var(--border);
+  background:linear-gradient(135deg,var(--card) 0%,var(--surface) 100%);
+  border:1px solid rgba(5,150,105,0.2);
   border-radius:16px;padding:36px;max-width:520px;text-align:center;
-  box-shadow:0 24px 64px rgba(0,0,0,0.5);
+  box-shadow:0 24px 64px rgba(0,0,0,0.6),0 0 0 1px rgba(5,150,105,0.08);
 }
 #no-data-banner h2{font-size:20px;margin-bottom:12px;font-weight:700}
 #no-data-banner pre{
@@ -364,11 +465,13 @@ tbody tr:nth-child(even):hover td{background:rgba(37,99,235,0.06)}
 }
 .picks-apply:hover{background:rgba(245,158,11,0.28)}
 .pick-card{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:10px;padding:14px 16px;cursor:pointer;
-  transition:all .15s;margin-bottom:10px;
+  background:linear-gradient(135deg,var(--card) 0%,rgba(11,18,32,0.9) 100%);
+  border:1px solid var(--border);
+  border-radius:12px;padding:14px 16px;cursor:pointer;
+  transition:all .18s;margin-bottom:10px;
+  box-shadow:0 2px 12px rgba(0,0,0,0.2);
 }
-.pick-card:hover{border-color:rgba(59,130,246,0.4);box-shadow:0 4px 20px rgba(59,130,246,0.1)}
+.pick-card:hover{border-color:rgba(5,150,105,0.4);box-shadow:0 6px 24px rgba(5,150,105,0.12),0 0 0 1px rgba(5,150,105,0.08)}
 .pick-metric{
   background:var(--bg);border:1px solid var(--border);
   border-radius:7px;padding:6px 10px;text-align:center;
@@ -399,14 +502,14 @@ tbody tr:nth-child(even):hover td{background:rgba(37,99,235,0.06)}
 .snap-tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .snap-table{width:100%;border-collapse:collapse;margin-bottom:6px}
 .snap-table th{
-  font-family:'DM Mono',monospace;font-size:10px;font-weight:600;
+  font-family:'Fira Code',monospace;font-size:10px;font-weight:600;
   color:var(--text3);text-transform:uppercase;letter-spacing:.06em;
   padding:7px 12px;border-bottom:1px solid var(--border);
   text-align:left;white-space:nowrap;
 }
 .snap-table th:not(:first-child){text-align:right}
 .snap-table td{
-  font-family:'DM Mono',monospace;font-size:12px;
+  font-family:'Fira Code',monospace;font-size:12px;
   padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.03);
   white-space:nowrap;vertical-align:middle;
 }
@@ -420,7 +523,7 @@ tbody tr:nth-child(even):hover td{background:rgba(37,99,235,0.06)}
 .snap-delta.neg{color:var(--red)}
 .snap-delta.flat{color:var(--text3)}
 .snap-section-title{
-  font-family:'Syne',sans-serif;font-size:11px;font-weight:700;
+  font-family:'Fira Sans',sans-serif;font-size:11px;font-weight:700;
   text-transform:uppercase;letter-spacing:.08em;color:var(--text3);
   padding:14px 0 6px;
 }
@@ -451,12 +554,15 @@ tbody tr:nth-child(even):hover td{background:rgba(37,99,235,0.06)}
   background:var(--accent);border-color:var(--accent);color:#fff;
 }
 .br-stat{
-  background:var(--card);border:1px solid var(--border);
-  border-radius:10px;padding:14px 22px;min-width:155px;
-  box-shadow:0 2px 12px rgba(0,0,0,0.2);
+  background:linear-gradient(135deg,var(--card) 0%,rgba(11,18,32,0.8) 100%);
+  border:1px solid var(--border);
+  border-radius:12px;padding:14px 22px;min-width:155px;
+  box-shadow:0 4px 20px rgba(0,0,0,0.25),inset 0 1px 0 rgba(255,255,255,0.04);
+  transition:border-color .2s,box-shadow .2s;
 }
-.br-stat-lbl{font-family:'Syne',sans-serif;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px;font-weight:600}
-.br-stat-val{font-family:'DM Mono',monospace;font-size:28px;font-weight:400;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.br-stat:hover{border-color:rgba(5,150,105,0.25);box-shadow:0 4px 24px rgba(5,150,105,0.1),inset 0 1px 0 rgba(255,255,255,0.04)}
+.br-stat-lbl{font-family:'Fira Sans',sans-serif;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.7px;margin-bottom:5px;font-weight:600}
+.br-stat-val{font-family:'Fira Code',monospace;font-size:28px;font-weight:400;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
 .br-legend-btn{
   display:inline-flex;align-items:center;gap:6px;
   padding:5px 14px;border-radius:20px;border:1px solid;
@@ -483,19 +589,40 @@ tr.bt-row:hover td{background:rgba(16,185,129,0.05)}
 }
 .pf-btn:hover{color:var(--text);border-color:var(--border2)}
 .pf-btn.active{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}
-.pf-cnt{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;padding:1px 6px;border-radius:8px;background:rgba(255,255,255,0.06);color:var(--text3)}
+.pf-cnt{font-family:'Fira Code',monospace;font-size:10px;font-weight:500;padding:1px 6px;border-radius:8px;background:rgba(255,255,255,0.06);color:var(--text3)}
 
 /* ── PAGE-LEVEL ANIMATIONS ──────────────────────────────────────────────────── */
 @keyframes fadein{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .tp-body table tbody{animation:fadein .18s ease}
 
-/* ── TYPOGRAPHY — DM MONO + SYNE ────────────────────────────────────────────── */
+/* ── GLOW UTILITY CLASSES ───────────────────────────────────────────────────── */
+.glow-green{color:var(--green-hi)!important;text-shadow:var(--glow-green)}
+.glow-red{color:var(--red)!important;text-shadow:var(--glow-red)}
+.glow-amber{color:var(--amber-hi)!important;text-shadow:var(--glow-amber)}
+.glow-cyan{color:var(--cyan)!important;text-shadow:var(--glow-cyan)}
 
-/* DM Mono: all numeric/data display */
-.mono-data{font-family:'DM Mono',monospace;font-variant-numeric:tabular-nums}
+/* ── ENHANCED SCROLLBAR ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:14px;height:14px}
+::-webkit-scrollbar-track{background:rgba(255,255,255,0.10);border-radius:7px}
+::-webkit-scrollbar-thumb{background:rgba(160,170,190,0.85);border-radius:7px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(5,150,105,1.0);border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
+@media(prefers-color-scheme:light){
+  ::-webkit-scrollbar-track{background:rgba(0,0,0,0.10)}
+  ::-webkit-scrollbar-thumb{background:rgba(80,95,120,0.70);border:3px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background:rgba(5,150,105,0.95);border:3px solid transparent;background-clip:padding-box}
+}
+:root[data-theme="light"] ::-webkit-scrollbar-track{background:rgba(0,0,0,0.10)}
+:root[data-theme="light"] ::-webkit-scrollbar-thumb{background:rgba(80,95,120,0.70);border:3px solid transparent;background-clip:padding-box}
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover{background:rgba(5,150,105,0.95);border:3px solid transparent;background-clip:padding-box}
 
-/* Apply Syne to headings and sidebar labels */
-.sb-title,.tp-title,.cp-sym,.br-stat-lbl{font-family:'Syne',sans-serif}
+/* ── TYPOGRAPHY — FIRA CODE + FIRA SANS ────────────────────────────────────── */
+
+/* Fira Code: all numeric/data display */
+.mono-data{font-family:'Fira Code',monospace;font-variant-numeric:tabular-nums}
+
+/* Fira Sans: headings and sidebar labels */
+.sb-title,.tp-title,.cp-sym,.br-stat-lbl{font-family:'Fira Sans',sans-serif;font-weight:700}
 
 /* Table: DM Mono for numeric columns (Price=2, RS=3, Score=4, 52WH=5,
    52WL=6, %fromHi=7, %aboveLo=8, VolRatio=9, vsMA50=10, vsEMA21=11, vsEMA10=12) */
@@ -509,13 +636,13 @@ tr.bt-row:hover td{background:rgba(16,185,129,0.05)}
 #stock-table td:nth-child(9),
 #stock-table td:nth-child(10),
 #stock-table td:nth-child(11),
-#stock-table td:nth-child(12){font-family:'DM Mono',monospace;font-variant-numeric:tabular-nums}
+#stock-table td:nth-child(12){font-family:'Fira Code',monospace;font-variant-numeric:tabular-nums}
 
 /* Chart pane stat values */
-.cp-sv{font-family:'DM Mono',monospace;font-variant-numeric:tabular-nums}
+.cp-sv{font-family:'Fira Code',monospace;font-variant-numeric:tabular-nums}
 
 /* Breadth stat values */
-.br-stat-val{font-family:'DM Mono',monospace;font-variant-numeric:tabular-nums}
+.br-stat-val{font-family:'Fira Code',monospace;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -612,9 +739,35 @@ python3 scanner.py</pre>
       <button class="sb-btn" onclick="showScreen('vcp_setup')" id="btn-vcp_setup">
         <span>VCP Setup</span><span class="sb-cnt" id="cnt-vcp_setup">-</span>
       </button>
-      <button class="sb-btn" onclick="showScreen('new_highs')" id="btn-new_highs">
-        <span>New 52-Week Highs</span><span class="sb-cnt" id="cnt-new_highs">-</span>
+      <button class="sb-btn newhigh-btn" onclick="showScreen('new_highs')" id="btn-new_highs" title="Stocks making new 52-week highs — with filters and CSV download">
+        <span>&#128200; 52-Week New Highs</span><span class="sb-cnt newhigh-cnt" id="cnt-new_highs">-</span>
       </button>
+      <button class="sb-btn ath-btn" onclick="showScreen('ath_highs')" id="btn-ath_highs" title="Stocks within 3% of all-time high — strongest trend leaders with filters and CSV download">
+        <span>&#127881; All-Time Highs</span><span class="sb-cnt ath-cnt" id="cnt-ath_highs">-</span>
+      </button>
+
+      <div class="sb-section" style="margin-top:6px">&#8599; RS Line</div>
+      <button class="sb-btn rs-trend-btn" onclick="showScreen('rs_trending')" id="btn-rs_trending" title="All stocks across all screens where RS Line is trending up — 3-month RS return stronger than 20 days ago">
+        <span>&#8599; RS Line Trending Up</span><span class="sb-cnt rs-trend-cnt" id="cnt-rs_trending">-</span>
+      </button>
+      <button class="sb-btn rs-trend-btn" onclick="showScreen('rs_trending_minervini')" id="btn-rs_trending_minervini" title="RS Line trending up AND meeting 7 or more Minervini Trend Template criteria (7/8 or 8/8)">
+        <span>&#11088; RS Trend + Minervini</span><span class="sb-cnt rs-trend-cnt" id="cnt-rs_trending_minervini">-</span>
+      </button>
+
+      <div class="sb-section" style="margin-top:6px">&#127919; Pivot Zones</div>
+      <button class="sb-btn dpivot-btn" onclick="showScreen('daily_near_pivot')" id="btn-daily_near_pivot" title="Stocks within 5% of their daily chart pivot high — approaching or just above the breakout level on the daily timeframe">
+        <span>&#9642; Near Pivot (Daily ±5%)</span><span class="sb-cnt dpivot-cnt" id="cnt-daily_near_pivot">-</span>
+      </button>
+      <button class="sb-btn wpivot-btn" onclick="showScreen('weekly_near_pivot')" id="btn-weekly_near_pivot" title="Stocks within 5% of their weekly chart pivot high — approaching or just above the breakout level on the weekly timeframe">
+        <span>&#127919; Near Pivot (Weekly ±5%)</span><span class="sb-cnt wpivot-cnt" id="cnt-weekly_near_pivot">-</span>
+      </button>
+      <button class="sb-btn" onclick="showScreen('near_base_pivot')" id="btn-near_base_pivot" title="Minervini-style weekly base pivot — stocks within 5% below or 3% above the highest high of their consolidation base. Requires 6+ Minervini criteria." style="background:rgba(251,191,36,.06);border-color:rgba(251,191,36,.3);color:#fbbf24">
+        <span>&#127942; Near Base Pivot (US)</span><span class="sb-cnt" id="cnt-near_base_pivot">-</span>
+      </button>
+      <button class="sb-btn" onclick="showScreen('ai_near_pivot')" id="btn-ai_near_pivot" title="AI-themed stocks near their weekly base pivot — semiconductors, cloud, data centers, power infrastructure. Minervini breakout zone." style="background:rgba(139,92,246,.08);border-color:rgba(139,92,246,.35);color:#a78bfa">
+        <span>&#129302; AI Theme — Near Pivot</span><span class="sb-cnt" id="cnt-ai_near_pivot">-</span>
+      </button>
+
       <button class="sb-btn" onclick="showScreen('watch_list')" id="btn-watch_list">
         <span>Watch List (7/8)</span><span class="sb-cnt" id="cnt-watch_list">-</span>
       </button>
@@ -622,15 +775,32 @@ python3 scanner.py</pre>
         <span>&#9650; C1–C6 Stage 2 Uptrend</span><span class="sb-cnt" id="cnt-c1_to_c6">-</span>
       </button>
 
+      <div class="sb-section" style="margin-top:6px">&#9889; Live Signals</div>
+      <button class="sb-btn v4sig-btn" onclick="showScreen('v4_live_signal')" id="btn-v4_live_signal" title="V4 live trade signals — exact backtest logic. Full zigzag VCP + 8 TT criteria + RS≥83 + vol≥1.5×. Structural stop from VCP last swing low. Full trade plan: entry, stop, shares, pyramid adds, stop management.">
+        <span>&#9889; V4 Live Signals</span><span class="sb-cnt v4sig-cnt" id="cnt-v4_live_signal">-</span>
+      </button>
+      <button class="sb-btn alert-btn" onclick="showScreen('breakout_alert')" id="btn-breakout_alert" title="VCP breakout alerts — pivot crossed today or within 5%. Full entry, stop, and position sizing for ₹20L portfolio">
+        <span>&#128276; Breakout Alerts</span><span class="sb-cnt alert-cnt" id="cnt-breakout_alert">-</span>
+      </button>
+      <button class="sb-btn" onclick="showAthSignals()" id="btn-ath_signals" title="ATH × SEPA backtest — new all-time high + Minervini ≥6/8 + vol ≥1.5× + RS beat. Optimal 5-position strategy: CAGR +50%, Calmar 1.10" style="background:rgba(52,211,153,.08);border-color:rgba(52,211,153,.3)">
+        <span style="color:#34d399">&#128200; ATH Buy Signals</span><span class="sb-cnt" id="cnt-ath_signals" style="background:rgba(52,211,153,.2);color:#34d399">-</span>
+      </button>
+
       <div class="sb-section" style="margin-top:6px">Minervini Trades</div>
       <button class="sb-btn picks-btn" onclick="showScreen('minervini_picks')" id="btn-minervini_picks">
         <span>&#9733; Minervini Picks</span><span class="sb-cnt" id="cnt-minervini_picks">-</span>
       </button>
-      <button class="sb-btn backtest-btn" onclick="showScreen('minervini_backtest')" id="btn-minervini_backtest" title="Exact backtest entry: 8/8 + VCP + Vol≥1.5× + within 15% of 52W high">
+      <button class="sb-btn backtest-btn" onclick="showScreen('minervini_backtest')" id="btn-minervini_backtest" title="V4 optimal: 8/8 + VCP + RS≥83 + Vol≥1.5× + within 20% of 52W high">
         <span>&#9654; Backtest Exact Picks</span><span class="sb-cnt bt-cnt" id="cnt-minervini_backtest">-</span>
       </button>
 
       <div class="sb-section" style="margin-top:6px">Recent IPOs</div>
+      <button class="sb-btn ipo-btn" onclick="showScreen('ipo_base')" id="btn-ipo_base" title="Minervini True IPO Base: listed ≤18 months, within 15% of ATH, base range &lt;20%, volume dry-up, above MA21 &amp; MA50. Zero overhead supply." style="font-weight:700">
+        <span>&#128640; IPO Base</span><span class="sb-cnt ipo-cnt" id="cnt-ipo_base">-</span>
+      </button>
+      <button class="sb-btn ipo-btn" onclick="showScreen('ipo_near_pivot')" id="btn-ipo_near_pivot" title="Recent IPOs within 5% of their weekly pivot buy point — the exact Minervini entry zone. Broader than IPO Base but strictly actionable." style="font-weight:700">
+        <span>&#127919; IPO Near Pivot</span><span class="sb-cnt ipo-cnt" id="cnt-ipo_near_pivot">-</span>
+      </button>
       <button class="sb-btn ipo-btn" onclick="showScreen('ipo_watch')" id="btn-ipo_watch" title="Recent listings with 30-209 days of data — too new for full template">
         <span>&#127331; IPO Watch (&lt;210d)</span><span class="sb-cnt ipo-cnt" id="cnt-ipo_watch">-</span>
       </button>
@@ -676,6 +846,12 @@ python3 scanner.py</pre>
       </button>
       <button class="sb-btn htf-btn" onclick="showScreen('hhhl_pullback')" id="btn-hhhl_pullback" title="Confirmed HH+HL uptrend, price pulling back to near the most recent Higher Low (within 8%), healthy 8-35% pullback from the recent HH">
         <span>&#9650; HH/HL Pullback</span><span class="sb-cnt htf-cnt" id="cnt-hhhl_pullback">-</span>
+      </button>
+      <button class="sb-btn htf-btn" onclick="showScreen('weekly_hl_pivot')" id="btn-weekly_hl_pivot" title="Stocks that recently confirmed a new Higher Low pivot on the weekly chart — each dip bought higher. Institutional accumulation signal. RS ≥ 60, above MA50, HL within last 10 weeks." style="font-weight:700">
+        <span>&#128200; Weekly Higher Low</span><span class="sb-cnt htf-cnt" id="cnt-weekly_hl_pivot">-</span>
+      </button>
+      <button class="sb-btn htf-btn" onclick="showScreen('high_ma20')" id="btn-high_ma20" title="Within 8% of 52W high or 10% of ATH AND within 5% of 20MA — classic Minervini pullback-to-20MA near highs setup. C1+C4+C5 uptrend confirmed." style="background:rgba(251,146,60,.07);border-color:rgba(251,146,60,.3);color:#fb923c;font-weight:700">
+        <span>&#127919; Near High &amp; 20MA</span><span class="sb-cnt" id="cnt-high_ma20" style="background:rgba(251,146,60,.15);color:#fb923c">-</span>
       </button>
       <div class="sb-subsection" style="padding:2px 10px 2px 14px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Primary Base</div>
       <button class="sb-btn htf-btn" onclick="showScreen('primary_base_new')" id="btn-primary_base_new" title="Minervini Primary Base — recent IPOs (listed within ~3 years) forming first tight base near ATH">
@@ -1336,7 +1512,7 @@ function initDashboard(){
   document.getElementById('no-data-banner').style.display='none';
   // Sidebar counts
   var screens = D.screens;
-  var _htfKeys      = {'htf_setup':1,'htf_potential':1,'ma_pullback':1,'hhhl_pullback':1,'primary_base_new':1,'primary_base_10yr':1};
+  var _htfKeys      = {'htf_setup':1,'htf_potential':1,'ma_pullback':1,'hhhl_pullback':1,'weekly_hl_pivot':1,'primary_base_new':1,'primary_base_10yr':1,'high_ma20':1};
   var _earningsKeys = {'strong_earnings':1};
   var _foKeys       = {'fo_momentum':1,'fo_strong_uptrend':1,'young_3yr':1,'young_10yr':1};
   var _ckKeys       = {'ck_daily_100':1,'ck_weekly_100':1,'ck_daily_cross':1,'ck_weekly_cross':1,'ck_mtf_100':1};
@@ -1366,18 +1542,180 @@ function initDashboard(){
   var btCount = btScr ? btScr.stocks.length : 0;
   var btcnt = document.getElementById('cnt-minervini_backtest');
   if(btcnt){ btcnt.textContent=btCount; btcnt.className='sb-cnt bt-cnt'+(btCount===0?' zero':''); }
+  // Breakout alert count
+  var alertScr = D.screens['breakout_alert'];
+  var alertCount = alertScr ? alertScr.stocks.length : 0;
+  var alertcnt = document.getElementById('cnt-breakout_alert');
+  if(alertcnt){
+    alertcnt.textContent = alertCount;
+    alertcnt.className = 'sb-cnt alert-cnt' + (alertCount===0?' zero':' has-alerts');
+  }
+  // V4 Live Signal count
+  var v4Scr = D.screens['v4_live_signal'];
+  var v4Count = v4Scr ? v4Scr.stocks.length : 0;
+  var v4cnt = document.getElementById('cnt-v4_live_signal');
+  if(v4cnt){
+    v4cnt.textContent = v4Count;
+    v4cnt.className = 'sb-cnt v4sig-cnt' + (v4Count===0?' zero':' has-signals');
+  }
   // IPO watch count
   var ipoScr = D.screens['ipo_watch'];
   var ipoCount = ipoScr ? ipoScr.stocks.length : 0;
   var ipocnt = document.getElementById('cnt-ipo_watch');
   if(ipocnt){ ipocnt.textContent=ipoCount; ipocnt.className='sb-cnt ipo-cnt'+(ipoCount===0?' zero':''); }
+  // IPO Base count
+  var ipoBaseScr = D.screens['ipo_base'];
+  var ipoBaseCount = ipoBaseScr ? ipoBaseScr.stocks.length : 0;
+  var ipoBaseCnt = document.getElementById('cnt-ipo_base');
+  if(ipoBaseCnt){ ipoBaseCnt.textContent=ipoBaseCount; ipoBaseCnt.className='sb-cnt ipo-cnt'+(ipoBaseCount===0?' zero':''); }
+  // IPO Near Pivot count
+  var ipoNearPivScr = D.screens['ipo_near_pivot'];
+  var ipoNearPivCount = ipoNearPivScr ? ipoNearPivScr.stocks.length : 0;
+  var ipoNearPivCnt = document.getElementById('cnt-ipo_near_pivot');
+  if(ipoNearPivCnt){ ipoNearPivCnt.textContent=ipoNearPivCount; ipoNearPivCnt.className='sb-cnt ipo-cnt'+(ipoNearPivCount===0?' zero':''); }
+  // ATH Live Signals badge
+  var athSigCount = (window.ATH_SIGNALS && window.ATH_SIGNALS.signals) ? window.ATH_SIGNALS.signals.length : 0;
+  var athSigCnt = document.getElementById('cnt-ath_signals');
+  if(athSigCnt){
+    athSigCnt.textContent = athSigCount;
+    athSigCnt.style.background = athSigCount > 0 ? 'rgba(52,211,153,.25)' : 'rgba(100,100,100,.2)';
+    athSigCnt.style.color = athSigCount > 0 ? '#34d399' : 'var(--muted)';
+  }
+  // Build global is_new map from all screens (so client-side computed screens carry the flag)
+  _buildIsNewMap();
+  // Pre-compute ATH count for sidebar badge
+  var _athPreload = _buildAthData();
+  // Pre-compute RS trending counts for sidebar badges
+  _buildRsTrendingData();
+  // Pre-compute daily/weekly pivot counts for sidebar badges
+  _buildDailyPivotData();
+  _buildWeeklyPivotData();
   // Auto-select full template
   showScreen('full_template');
 }
 
 // ── SHOW SCREEN ───────────────────────────────────────────────────────────────
+var _isNewMap = {};
+
+function _buildIsNewMap(){
+  _isNewMap = {};
+  Object.keys(D.screens || {}).forEach(function(sk){
+    (D.screens[sk].stocks || []).forEach(function(s){ if(s.is_new) _isNewMap[s.ticker] = true; });
+  });
+}
+
+function _newBadge(s){
+  return (s && (_isNewMap[s.ticker] || s.is_new)) ? '<span class="new-badge">NEW</span>' : '';
+}
+
+function _toggleNewSub(btn){
+  var body = document.querySelector('#new-subsection .ns-body');
+  if(!body) return;
+  if(body.style.display === 'none'){
+    body.style.display = '';
+    btn.textContent = '▾ collapse';
+  } else {
+    body.style.display = 'none';
+    btn.textContent = '▸ expand (' + (btn.dataset.count||'') + ')';
+  }
+}
+
+function _downloadNewSubCsv(){
+  var el = document.getElementById('new-subsection');
+  if(!el || !el._newStocks) return;
+  var rows = [['Ticker','RS','Price','C/8','%FromHigh','VolRatio','PivotD%','PivotW%','EPS_YoY','Rev_YoY','NP_YoY','VCP']];
+  el._newStocks.forEach(function(s){
+    rows.push([
+      s.ticker,
+      s.rs_rank != null ? s.rs_rank : '',
+      s.price    != null ? s.price   : '',
+      s.passed   != null ? s.passed  : '',
+      s.pct_from_high   != null ? s.pct_from_high.toFixed(1)   : '',
+      s.vol_ratio       != null ? s.vol_ratio.toFixed(2)        : '',
+      s.pct_from_pivot  != null ? s.pct_from_pivot.toFixed(1)  : '',
+      s.pct_from_pivot_w!= null ? s.pct_from_pivot_w.toFixed(1): '',
+      s.q_eps_yoy != null ? s.q_eps_yoy.toFixed(0) : '',
+      s.q_rev_yoy != null ? s.q_rev_yoy.toFixed(0) : '',
+      s.q_np_yoy  != null ? s.q_np_yoy.toFixed(0)  : '',
+      s.vcp ? 'Y' : 'N',
+    ]);
+  });
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var blob = new Blob([csv], {type:'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'new_since_last_scan_'+(currentScreen||'screen')+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+function _renderNewSubsection(newStocks){
+  var old = document.getElementById('new-subsection');
+  if(old) old.remove();
+  if(!newStocks || !newStocks.length) return;
+
+  var el = document.createElement('div');
+  el.id = 'new-subsection';
+  el._newStocks = newStocks;
+
+  var rowsHtml = newStocks.map(function(s){
+    var rsCol = (s.rs_rank||0)>=85?'var(--green)':(s.rs_rank||0)>=70?'var(--text)':'var(--amber)';
+    var passed = s.passed || 0;
+    var passedBadge = passed===8
+      ? '<span class="badge bg">8/8</span>'
+      : passed>=6 ? '<span class="badge ba">'+passed+'/8</span>'
+                  : '<span class="badge br">'+passed+'/8</span>';
+    var hiCol = (s.pct_from_high||0)>=-10?'var(--green)':(s.pct_from_high||0)>=-25?'var(--amber)':'var(--red)';
+    var volCol = (s.vol_ratio||0)>=1.5?'var(--green)':(s.vol_ratio||0)>=0.8?'var(--text)':'var(--muted)';
+    var pdStr = s.pct_from_pivot  != null ? s.pct_from_pivot.toFixed(1)+'%'   : '—';
+    var pdCol = s.pct_from_pivot  != null ? (s.pct_from_pivot>=0?'var(--green)':'var(--amber)') : 'var(--muted)';
+    var pwStr = s.pct_from_pivot_w!= null ? s.pct_from_pivot_w.toFixed(1)+'%' : '—';
+    var pwCol = s.pct_from_pivot_w!= null ? (s.pct_from_pivot_w>=0?'var(--green)':'var(--amber)') : 'var(--muted)';
+    var epsStr = s.q_eps_yoy != null ? (s.q_eps_yoy>0?'+':'')+s.q_eps_yoy.toFixed(0)+'%' : '—';
+    var epsCol = (s.q_eps_yoy||0)>=40?'var(--green)':(s.q_eps_yoy||0)>=25?'var(--amber)':'var(--text)';
+    var revStr = s.q_rev_yoy != null ? (s.q_rev_yoy>0?'+':'')+s.q_rev_yoy.toFixed(0)+'%' : '—';
+    var npStr  = s.q_np_yoy  != null ? (s.q_np_yoy>0?'+':'')+s.q_np_yoy.toFixed(0)+'%'  : '—';
+    return '<tr class="stock-row" onclick="selectStock(\''+s.ticker+'\')" data-ticker="'+s.ticker+'">'
+      +'<td><strong style="color:var(--cyan)">'+s.ticker+'</strong>'+(s.vcp?' <span class="badge bp" style="font-size:9px">VCP</span>':'')+'</td>'
+      +'<td><span style="color:'+rsCol+';font-weight:700">'+(s.rs_rank != null ? s.rs_rank : '—')+'</span></td>'
+      +'<td>'+_currencySymbol+num(s.price||0)+'</td>'
+      +'<td>'+passedBadge+'</td>'
+      +'<td style="color:'+hiCol+'">'+(s.pct_from_high!=null?s.pct_from_high.toFixed(1)+'%':'—')+'</td>'
+      +'<td style="color:'+volCol+'">'+(s.vol_ratio!=null?s.vol_ratio.toFixed(2)+'×':'—')+'</td>'
+      +'<td style="color:'+pdCol+'">'+pdStr+'</td>'
+      +'<td style="color:'+pwCol+'">'+pwStr+'</td>'
+      +'<td style="color:'+epsCol+'">'+epsStr+'</td>'
+      +'<td style="color:var(--text)">'+revStr+'</td>'
+      +'<td style="color:var(--text)">'+npStr+'</td>'
+      +'</tr>';
+  }).join('');
+
+  el.innerHTML = '<div class="ns-hdr">'
+    +'<span style="font-size:14px">📥</span>'
+    +'<span class="ns-count">'+newStocks.length+' newly added to this section since last scan</span>'
+    +'<button class="ns-dl-btn" onclick="_downloadNewSubCsv()">&#8595; Download CSV</button>'
+    +'<button class="ns-toggle-btn" data-count="'+newStocks.length+'" onclick="_toggleNewSub(this)">&#9660; collapse</button>'
+    +'</div>'
+    +'<div class="ns-body">'
+    +'<table class="ns-table"><thead><tr>'
+    +'<th>Ticker</th><th>RS</th><th>Price</th><th>C/8</th>'
+    +'<th>% Hi</th><th>Vol</th><th>Pivot-D</th><th>Pivot-W</th>'
+    +'<th>EPS YoY</th><th>Rev YoY</th><th>NP YoY</th>'
+    +'</tr></thead><tbody>'+rowsHtml+'</tbody></table>'
+    +'</div>';
+
+  var tbl = document.getElementById('stock-table');
+  var tpBody = document.querySelector('.tp-body');
+  if(tbl && tbl.style.display !== 'none'){
+    tpBody.insertBefore(el, tbl);
+  } else {
+    tpBody.appendChild(el);
+  }
+}
+
 function showScreen(key){
   currentScreen = key;
+  var _ns = document.getElementById('new-subsection');
+  if(_ns) _ns.remove();
 
   // Show download button for all data screens
   var dlBtn = document.getElementById('dl-excel-btn');
@@ -1441,6 +1779,7 @@ function showScreen(key){
     filteredStocks = currentStocks.slice();
     _displayedRows = PAGE_SIZE;
     renderChartinkTable(filteredStocks, key);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
     return;
   }
   // New This Scan screen
@@ -1473,6 +1812,7 @@ function showScreen(key){
     filteredStocks = currentStocks.slice();
     _displayedRows = PAGE_SIZE;
     renderFoTable(filteredStocks);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
     return;
   }
   // CCI34 + strong_earnings screens — custom table
@@ -1504,10 +1844,48 @@ function showScreen(key){
     filteredStocks = currentStocks.slice();
     _displayedRows = PAGE_SIZE;
     renderCciTable(filteredStocks, key);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
     return;
   }
   // HTF & MA Pullback screens — custom table
-  if(key === 'htf_setup' || key === 'htf_potential' || key === 'ma_pullback' || key === 'hhhl_pullback' || key === 'primary_base_new' || key === 'primary_base_10yr'){
+  if(key === 'ipo_base' || key === 'ipo_near_pivot'){
+    pikView.style.display = 'none';
+    tbl.style.display = '';
+    var scr = D.screens[key] || {};
+    var isNearPiv = key === 'ipo_near_pivot';
+    document.getElementById('tp-title').textContent = isNearPiv ? '🎯 IPO Near Pivot' : '🚀 IPO Base';
+    document.getElementById('tp-desc').textContent  = isNearPiv
+      ? 'Recent IPOs (≤18 months) within 5% of their weekly pivot buy point. The exact Minervini entry zone — stock coiling just below the weekly high, above MA50, RS ≥ 50. Green pivot % = in the buy zone now.'
+      : 'Minervini True IPO Base — listed ≤18 months, within 15% of ATH, base range <20%, volume dry-up (base vol < 80% of pre-base), above MA21 & MA50, RS ≥ 60. Zero overhead supply — the cleanest setup in the market.';
+    document.getElementById('filter-inp').value = '';
+    document.getElementById('signal-filters').style.display = 'none';
+    sigFilter = 'all';
+    currentStocks  = scr.stocks ? scr.stocks.slice() : [];
+    filteredStocks = currentStocks.slice();
+    _displayedRows = PAGE_SIZE;
+    renderIpoBaseTable(filteredStocks);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
+    return;
+  }
+  if(key === 'high_ma20'){
+    pikView.style.display = 'none';
+    tbl.style.display = '';
+    var scr = D.screens['high_ma20'] || {};
+    document.getElementById('tp-title').textContent = '🎯 Near High & 20MA';
+    document.getElementById('tp-desc').textContent  = 'Within 8% of 52-week high or 10% of all-time high AND price within 5% of the 20-day MA. Minervini pullback-to-20MA setup — price hugging support in a strong uptrend. Click row → TradingView daily chart.';
+    document.getElementById('filter-inp').value = '';
+    document.getElementById('signal-filters').style.display = 'none';
+    sigFilter = 'all';
+    var _hm20stocks = scr.stocks ? scr.stocks.slice() : [];
+    _hm20stocks.sort(function(a,b){ return Math.abs(a.pct_from_ma20||99) - Math.abs(b.pct_from_ma20||99); });
+    currentStocks  = _hm20stocks;
+    filteredStocks = _hm20stocks.slice();
+    _displayedRows = PAGE_SIZE;
+    renderHighMA20Table(filteredStocks);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
+    return;
+  }
+  if(key === 'htf_setup' || key === 'htf_potential' || key === 'ma_pullback' || key === 'hhhl_pullback' || key === 'weekly_hl_pivot' || key === 'primary_base_new' || key === 'primary_base_10yr'){
     pikView.style.display = 'none';
     tbl.style.display = '';
     var scr = D.screens[key];
@@ -1520,8 +1898,122 @@ function showScreen(key){
     filteredStocks = currentStocks.slice();
     _displayedRows = PAGE_SIZE;
     renderHtfTable(filteredStocks, key);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
     return;
   }
+  // 52W New Highs + All-Time Highs — dedicated renderer with filters + download
+  if(key === 'new_highs' || key === 'ath_highs'){
+    pikView.style.display = 'none';
+    tbl.style.display = '';
+    var scr = D.screens[key] || {};
+    document.getElementById('tp-title').textContent = key === 'ath_highs' ? 'All-Time High Leaders' : '52-Week New Highs';
+    document.getElementById('tp-desc').textContent  = key === 'ath_highs'
+      ? 'Stocks within 5% of their all-time high — derived from all scan screens. Sorted by RS rank.'
+      : 'Stocks making new 52-week highs today. Filter by template quality, RS, volume, or VCP setup.';
+    document.getElementById('filter-inp').value = '';
+    document.getElementById('signal-filters').style.display = 'none';
+    sigFilter = 'all';
+    _activeHighsChip = 'all';
+    currentStocks  = key === 'ath_highs' ? _buildAthData() : (scr.stocks ? scr.stocks.slice() : []);
+    filteredStocks = currentStocks.slice();
+    _displayedRows = PAGE_SIZE;
+    renderHighsTable(filteredStocks, key);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
+    return;
+  }
+
+  // RS Line Trending Up — dedicated renderer
+  if(key === 'rs_trending' || key === 'rs_trending_minervini'){
+    pikView.style.display = 'none';
+    tbl.style.display = '';
+    document.getElementById('tp-title').textContent = key === 'rs_trending_minervini'
+      ? 'RS Trend + Minervini'
+      : 'RS Line Trending Up';
+    document.getElementById('tp-desc').textContent = key === 'rs_trending_minervini'
+      ? 'RS Line trending up AND meeting ≥7 Minervini Trend Template criteria. Highest-conviction RS leaders.'
+      : 'All stocks across every screen where RS Line is strengthening — 3-month RS return better than 20 days ago. Sorted by RS rank.';
+    document.getElementById('filter-inp').value = '';
+    document.getElementById('signal-filters').style.display = 'none';
+    sigFilter = 'all';
+    var rsData = _buildRsTrendingData();
+    currentStocks  = key === 'rs_trending_minervini' ? rsData.minervini : rsData.all;
+    filteredStocks = currentStocks.slice();
+    _displayedRows = PAGE_SIZE;
+    renderRsTrendingTable(filteredStocks, key);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
+    return;
+  }
+
+  // Near Pivot (Daily) — dedicated renderer
+  if(key === 'daily_near_pivot'){
+    pikView.style.display = 'none';
+    tbl.style.display = '';
+    document.getElementById('tp-title').textContent = 'Near Pivot — Daily Chart (±5%)';
+    document.getElementById('tp-desc').textContent  = 'Stocks within 5% of their daily chart pivot high. Approaching or just above the daily breakout level. Sorted by distance from pivot (closest first).';
+    document.getElementById('filter-inp').value = '';
+    document.getElementById('signal-filters').style.display = 'none';
+    sigFilter = 'all';
+    currentStocks  = _buildDailyPivotData();
+    filteredStocks = currentStocks.slice();
+    _displayedRows = PAGE_SIZE;
+    renderDailyPivotTable(filteredStocks);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
+    return;
+  }
+
+  // AI Theme Near Pivot — dedicated renderer
+  if(key === 'ai_near_pivot'){
+    pikView.style.display = 'none';
+    tbl.style.display = '';
+    document.getElementById('tp-title').textContent = '🤖 AI Theme — Near Weekly Base Pivot';
+    document.getElementById('tp-desc').textContent  = 'AI-themed stocks (semiconductors, cloud, data centers, power infrastructure) within 5% below or 3% above their weekly consolidation base pivot. Breaking out first.';
+    document.getElementById('filter-inp').value = '';
+    document.getElementById('signal-filters').style.display = 'none';
+    sigFilter = 'all';
+    var _aiStocks = (D.screens['ai_near_pivot'] ? D.screens['ai_near_pivot'].stocks : []).slice();
+    _aiStocks.sort(function(a,b){ return (b.pct_from_base_pivot||0) - (a.pct_from_base_pivot||0); });
+    currentStocks  = _aiStocks;
+    filteredStocks = _aiStocks.slice();
+    _displayedRows = PAGE_SIZE;
+    renderAiPivotTable(filteredStocks);
+    return;
+  }
+
+  // Near Weekly Base Pivot (Minervini US) — dedicated renderer
+  if(key === 'near_base_pivot'){
+    pikView.style.display = 'none';
+    tbl.style.display = '';
+    document.getElementById('tp-title').textContent = 'Near Weekly Base Pivot — Minervini';
+    document.getElementById('tp-desc').textContent  = 'US stocks within 5% below or 3% above the highest high of their consolidation base. Minervini trend template ≥6/8. Sorted by proximity to pivot (breaking out first).';
+    document.getElementById('filter-inp').value = '';
+    document.getElementById('signal-filters').style.display = 'none';
+    sigFilter = 'all';
+    var _nbpStocks = (D.screens['near_base_pivot'] ? D.screens['near_base_pivot'].stocks : []).slice();
+    _nbpStocks.sort(function(a,b){ return (b.pct_from_base_pivot||0) - (a.pct_from_base_pivot||0); });
+    currentStocks  = _nbpStocks;
+    filteredStocks = _nbpStocks.slice();
+    _displayedRows = PAGE_SIZE;
+    renderBasePivotTable(filteredStocks);
+    return;
+  }
+
+  // Near Pivot (Weekly) — dedicated renderer
+  if(key === 'weekly_near_pivot'){
+    pikView.style.display = 'none';
+    tbl.style.display = '';
+    document.getElementById('tp-title').textContent = 'Near Pivot — Weekly Chart (±5%)';
+    document.getElementById('tp-desc').textContent  = 'Stocks within 5% of their weekly chart pivot high. Approaching or just above the weekly breakout level. Sorted by proximity to pivot (closest first).';
+    document.getElementById('filter-inp').value = '';
+    document.getElementById('signal-filters').style.display = 'none';
+    sigFilter = 'all';
+    currentStocks  = _buildWeeklyPivotData();
+    filteredStocks = currentStocks.slice();
+    _displayedRows = PAGE_SIZE;
+    renderWeeklyPivotTable(filteredStocks);
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
+    return;
+  }
+
   // Hide signal filters for non-CCI screens
   document.getElementById('signal-filters').style.display = 'none';
   sigFilter = 'all';
@@ -1534,6 +2026,79 @@ function showScreen(key){
   document.getElementById('tp-title').textContent = scr ? scr.label : key;
   document.getElementById('tp-desc').textContent  = scr ? scr.desc  : '';
   document.getElementById('filter-inp').value = '';
+
+  // ── V4 Live Signals — custom card panel ───────────────────────────────────
+  var existingV4Panel = document.getElementById('v4sig-panel');
+  if(existingV4Panel) existingV4Panel.remove();
+  document.querySelectorAll('.v4sig-card-wrap').forEach(function(el){ el.remove(); });
+  if(key === 'v4_live_signal'){
+    var v4Stocks   = scr ? scr.stocks : [];
+    var v4Breaks   = v4Stocks.filter(function(s){ return s.signal_type === 'BREAKOUT'; });
+    var v4Setups   = v4Stocks.filter(function(s){ return s.signal_type === 'SETUP'; });
+    var v4Hdr = document.createElement('div');
+    v4Hdr.id = 'v4sig-panel';
+    v4Hdr.style.cssText = 'padding:10px 16px 0;background:rgba(34,211,238,.07);border-bottom:2px solid rgba(34,211,238,.3);flex-shrink:0';
+    v4Hdr.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:10px">'
+      +'<span style="font-size:22px">&#9889;</span>'
+      +'<div style="flex:1">'
+      +'<div style="font-size:13px;font-weight:700;color:#22d3ee">V4 Live Trade Signals</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'
+      +'Same exact logic as the <b style="color:#22d3ee">V4 SEPA backtest (CAGR 29%, Calmar 1.16)</b>: '
+      +'8-criteria Trend Template + zigzag VCP (2–6C, vol dry-up) + RS&ge;83 + vol&ge;1.5&times;. '
+      +'Stop from actual VCP swing low. Sizing: &#8377;20L &middot; 2% risk = &#8377;40K. Refresh by re-running scanner.py.'
+      +'</div></div>'
+      +'<div style="text-align:right">'
+      +'<span style="font-size:20px;font-weight:700;color:#22d3ee">'+v4Breaks.length+'</span>'
+      +'<span style="font-size:11px;color:var(--muted)"> breakout'+(v4Breaks.length!==1?'s':'')+'</span>'
+      +'&nbsp;&nbsp;<span style="font-size:20px;font-weight:700;color:#38bdf8">'+v4Setups.length+'</span>'
+      +'<span style="font-size:11px;color:var(--muted)"> setup'+(v4Setups.length!==1?'s':'')+'</span>'
+      +'</div></div>';
+    var tpBody = document.querySelector('.tp-body');
+    tpBody.insertBefore(v4Hdr, tpBody.firstChild);
+    document.getElementById('stock-table').style.display = 'none';
+    var v4Past = scr ? (scr.past_trades || []) : [];
+    renderV4Signals(v4Stocks, tpBody, v4Past);
+    return;
+  }
+
+  // ── Breakout Alerts — custom card panel ────────────────────────────────────
+  var existingAlertPanel = document.getElementById('alert-panel');
+  if(existingAlertPanel) existingAlertPanel.remove();
+  if(key === 'breakout_alert'){
+    var alertStocks = scr ? scr.stocks : [];
+    var breakouts  = alertStocks.filter(function(s){ return s.alert_type === 'BREAKOUT'; });
+    var watchlists = alertStocks.filter(function(s){ return s.alert_type === 'WATCHLIST'; });
+    var hdr = document.createElement('div');
+    hdr.id = 'alert-panel';
+    hdr.style.cssText = 'padding:10px 16px 0;background:rgba(249,115,22,.07);border-bottom:2px solid rgba(249,115,22,.3);flex-shrink:0';
+    hdr.innerHTML =
+      '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:10px">'
+      +'<span style="font-size:22px">&#128276;</span>'
+      +'<div style="flex:1">'
+      +'<div style="font-size:13px;font-weight:700;color:#f97316">VCP Breakout Alerts</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'
+      +'<b style="color:#f97316">BREAKOUT</b> = pivot crossed TODAY with 1.5× vol &mdash; enter now &nbsp;|&nbsp; '
+      +'<b style="color:#d97706">WATCHLIST</b> = within 5% of pivot, ready to fire &nbsp;|&nbsp; '
+      +'Sizing: &#8377;20L portfolio &middot; 2% risk/trade = &#8377;40,000 risk &middot; 8% stop'
+      +'</div></div>'
+      +'<div style="text-align:right">'
+      +'<span style="font-size:20px;font-weight:700;color:#f97316">'+breakouts.length+'</span>'
+      +'<span style="font-size:11px;color:var(--muted)"> breakout'+(breakouts.length!==1?'s':'')+'</span>'
+      +'&nbsp;&nbsp;<span style="font-size:20px;font-weight:700;color:#d97706">'+watchlists.length+'</span>'
+      +'<span style="font-size:11px;color:var(--muted)"> watchlist</span>'
+      +'</div></div>';
+    var tpBody = document.querySelector('.tp-body');
+    tpBody.insertBefore(hdr, tpBody.firstChild);
+    // Hide the normal table; render custom alert cards
+    document.getElementById('stock-table').style.display = 'none';
+    renderBreakoutAlerts(alertStocks, tpBody);
+    return;
+  }
+
+  // ── ATH signals panel cleanup ───────────────────────────────────────────────
+  var existingAthPanel = document.getElementById('ath-signal-panel');
+  if(existingAthPanel) existingAthPanel.remove();
 
   // Backtest Exact Picks — show green banner above the table
   var existingBanner = document.getElementById('bt-banner');
@@ -1604,6 +2169,259 @@ function showScreen(key){
   currentStocks = scr ? scr.stocks.slice() : [];
   _displayedRows = PAGE_SIZE;
   applyFilter();
+}
+
+// ── BREAKOUT ALERT RENDERER ────────────────────────────────────────────────────
+// ── V4 LIVE SIGNAL RENDERER ───────────────────────────────────────────────────
+function renderV4Signals(stocks, tpBody, pastTrades){
+  document.querySelectorAll('.v4sig-card-wrap').forEach(function(el){ el.remove(); });
+
+  function inr(v){ return '&#8377;'+Number(v).toLocaleString('en-IN'); }
+  function fmt2(v){ return v == null ? '&#8212;' : Number(v).toFixed(2); }
+  function rsBg(r){ return r >= 90 ? 'rgba(16,185,129,0.15)' : r >= 70 ? 'rgba(249,115,22,0.13)' : 'rgba(239,68,68,0.12)'; }
+  function rsColor(r){ return r >= 90 ? 'var(--green-hi)' : r >= 70 ? '#fb923c' : 'var(--red)'; }
+  function qColor(q){ return q >= 9 ? 'var(--green-hi)' : q >= 7 ? '#22d3ee' : '#fb923c'; }
+
+  if(!stocks || stocks.length === 0){
+    var empty = document.createElement('div');
+    empty.className = 'v4sig-card-wrap';
+    empty.style.cssText = 'padding:40px;text-align:center;color:var(--muted)';
+    empty.innerHTML = '<div style="font-size:28px;margin-bottom:8px">&#9889;</div>'
+      +'<div style="font-size:13px">No V4 live signals today.</div>'
+      +'<div style="font-size:11px;margin-top:4px">Signals fire when a stock passes all 8 Trend Template criteria + zigzag VCP (vol dry-up) + RS&ge;83 + vol&ge;1.5&#215;.</div>';
+    tpBody.appendChild(empty);
+    return;
+  }
+
+  // Sort: BREAKOUT first, then SETUP; within each by VCP quality desc, then RS desc
+  var sorted = stocks.slice().sort(function(a, b){
+    if(a.signal_type !== b.signal_type) return a.signal_type === 'BREAKOUT' ? -1 : 1;
+    var qd = (b.vcp_quality || 0) - (a.vcp_quality || 0);
+    return qd !== 0 ? qd : (b.rs_rank || 0) - (a.rs_rank || 0);
+  });
+
+  sorted.forEach(function(s){
+    var isBreakout = s.signal_type === 'BREAKOUT';
+    var tvUrl = 'https://www.tradingview.com/chart/?symbol=NSE:' + s.ticker;
+    var rsVal = s.rs_rank || 0;
+    var rsTrend = s.rs_trending_up
+      ? '<span style="font-size:10px;font-weight:600;color:var(--green-hi)">&#9650; RS trending</span>'
+      : '<span style="font-size:10px;color:var(--muted)">RS flat</span>';
+    var qVal = s.vcp_quality || 0;
+    var nC   = s.vcp_contractions || 0;
+    var dep  = s.vcp_base_depth != null ? s.vcp_base_depth + '%' : '—';
+    var acc  = s.vcp_accum != null ? s.vcp_accum.toFixed(2) : '—';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'v4sig-card-wrap';
+    wrap.innerHTML =
+      '<div class="v4sig-card '+(isBreakout?'breakout':'setup')+'">'
+      // ── Header ──────────────────────────────────────────────────────────
+      +'<div class="v4sig-head">'
+        +'<span class="v4sig-badge '+(isBreakout?'breakout':'setup')+'">'+(isBreakout?'&#9889; BREAKOUT':'&#9711; SETUP')+'</span>'
+        +'<span class="v4sig-ticker">'+s.ticker+'</span>'
+        +'<span class="alert-rs" style="background:'+rsBg(rsVal)+';color:'+rsColor(rsVal)+'">RS '+rsVal+'</span>'
+        +'<span class="v4sig-quality" style="color:'+qColor(qVal)+'">Q'+qVal+'</span>'
+        +rsTrend
+        +'<a href="'+tvUrl+'" target="_blank" class="alert-tv-link" style="margin-left:auto">&#128202; Chart</a>'
+      +'</div>'
+      // ── VCP details line ──────────────────────────────────────────────────
+      +'<div class="v4sig-note">'+s.signal_note+'</div>'
+      // ── Row 1: Core entry & risk ──────────────────────────────────────────
+      +'<div class="v4sig-divider">&#9654; ENTRY &amp; RISK (₹20L / 2% risk = ₹40K)</div>'
+      +'<div class="alert-grid">'
+        +'<div class="alert-metric"><div class="lbl">Entry Price</div><div class="val '+(isBreakout?'o g':'')+'" style="color:#22d3ee">'+inr(s.entry_price)+'</div><div style="font-size:9px;color:var(--muted)">0.5% above pivot</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Stop Loss</div><div class="val r">'+inr(s.stop_price)+'</div><div style="font-size:9px;color:var(--muted)">VCP swing low ('+s.stop_pct+'%)</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Shares</div><div class="val">'+Number(s.shares).toLocaleString()+'</div><div style="font-size:9px;color:var(--muted)">₹40K risk ÷ R/share</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Position Value</div><div class="val">'+inr(s.position_inr)+'</div><div style="font-size:9px;color:var(--muted)">'+((s.position_inr/2000000*100).toFixed(1))+'% of ₹20L</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Risk (₹)</div><div class="val o">'+inr(s.risk_inr)+'</div><div style="font-size:9px;color:var(--muted)">= 1R</div></div>'
+        +'<div class="alert-metric"><div class="lbl">VCP Pivot</div><div class="val">'+inr(s.pivot_price)+'</div><div style="font-size:9px;color:var(--muted)">Structural buy point</div></div>'
+      +'</div>'
+      // ── Row 2: VCP quality stats ──────────────────────────────────────────
+      +'<div class="v4sig-divider">&#128200; VCP QUALITY (zigzag analysis)</div>'
+      +'<div class="alert-grid">'
+        +'<div class="alert-metric"><div class="lbl">Quality Score</div><div class="val" style="color:'+qColor(qVal)+'">'+qVal+' / 10</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Contractions</div><div class="val">'+nC+'C</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Base Depth</div><div class="val '+(parseFloat(dep)<20?'g':parseFloat(dep)<35?'o':'r')+'">'+dep+'</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Accum Ratio</div><div class="val '+(parseFloat(acc)>=1.5?'g':parseFloat(acc)>=1?'o':'r')+'">'+acc+'&times;</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Vol Ratio Today</div><div class="val '+(s.vol_ratio>=1.5?'g':s.vol_ratio>=1?'o':'r')+'">'+fmt2(s.vol_ratio)+'&times;</div></div>'
+        +'<div class="alert-metric"><div class="lbl">From 52W High</div><div class="val '+(s.pct_from_high>=-5?'g':s.pct_from_high>=-15?'o':'r')+'">'+fmt2(s.pct_from_high)+'%</div></div>'
+      +'</div>'
+      // ── Row 3: Pyramid plan ───────────────────────────────────────────────
+      +(s.pyr1_price ? (
+        '<div class="v4sig-divider">&#9650; PYRAMID ADDS — Ch.13 (add when in profit)</div>'
+        +'<div class="alert-grid">'
+          +'<div class="alert-metric"><div class="lbl">Add 1 &mdash; +15%</div><div class="val g">'+inr(s.pyr1_price)+'</div><div style="font-size:9px;color:var(--muted)">+50% of initial shares</div></div>'
+          +'<div class="alert-metric"><div class="lbl">Add 2 &mdash; +30%</div><div class="val g">'+inr(s.pyr2_price)+'</div><div style="font-size:9px;color:var(--muted)">+25% of initial shares</div></div>'
+          +'<div class="alert-metric"><div class="lbl">Add 3 &mdash; +50%</div><div class="val g">'+inr(s.pyr3_price)+'</div><div style="font-size:9px;color:var(--muted)">+12.5% of initial shares</div></div>'
+        +'</div>'
+      ) : '')
+      // ── Row 4: Stop management ────────────────────────────────────────────
+      +(s.r3_price ? (
+        '<div class="v4sig-divider">&#128683; STOP MANAGEMENT — Ch.13</div>'
+        +'<div class="alert-grid">'
+          +'<div class="alert-metric"><div class="lbl">3R reached &mdash; price</div><div class="val o">'+inr(s.r3_price)+'</div><div style="font-size:9px;color:var(--muted)">&#8594; move stop to breakeven</div></div>'
+          +'<div class="alert-metric"><div class="lbl">4R reached &mdash; price</div><div class="val o">'+inr(s.r4_price)+'</div><div style="font-size:9px;color:var(--muted)">&#8594; trail stop to '+inr(s.trail_stop)+'</div></div>'
+          +'<div class="alert-metric"><div class="lbl">1R = risk/share</div><div class="val r">'+inr(Math.round(s.risk_inr / (s.shares || 1)))+'</div><div style="font-size:9px;color:var(--muted)">entry &minus; stop price</div></div>'
+        +'</div>'
+      ) : '')
+      +'</div>';
+    tpBody.appendChild(wrap);
+  });
+
+  // ── Past Trades This Year ──────────────────────────────────────────────────
+  if(pastTrades && pastTrades.length > 0){
+    var ptWrap = document.createElement('div');
+    ptWrap.className = 'v4sig-card-wrap';
+    var curYear = new Date().getFullYear();
+    var ptRows = pastTrades.map(function(t){
+      var gain = parseFloat(t.gain_pct) || 0;
+      var gainColor = gain > 0 ? 'var(--green-hi)' : 'var(--red)';
+      var rMult = parseFloat(t.r_mult) || 0;
+      var rColor = rMult > 0 ? 'var(--green-hi)' : 'var(--red)';
+      var pnl = parseInt(t.pnl_inr) || 0;
+      var pnlFmt = (pnl >= 0 ? '+' : '') + '&#8377;' + Math.abs(pnl).toLocaleString('en-IN');
+      var pnlColor = pnl >= 0 ? 'var(--green-hi)' : 'var(--red)';
+      var tdR = 'padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums';
+      var tdL = 'padding:5px 8px;text-align:left';
+      return '<tr style="border-bottom:1px solid rgba(255,255,255,.05)">'
+        +'<td style="'+tdL+';font-weight:700;color:#e2e8f0">'+t.symbol+'</td>'
+        +'<td style="'+tdL+';color:var(--muted)">'+t.entry_date+'</td>'
+        +'<td style="'+tdL+';color:var(--muted)">'+t.exit_date+'</td>'
+        +'<td style="'+tdR+'">&#8377;'+(parseFloat(t.entry_price)||0).toFixed(2)+'</td>'
+        +'<td style="'+tdR+'">&#8377;'+(parseFloat(t.exit_price)||0).toFixed(2)+'</td>'
+        +'<td style="'+tdR+';font-weight:700;color:'+gainColor+'">'+(gain>=0?'+':'')+gain.toFixed(1)+'%</td>'
+        +'<td style="'+tdR+';font-weight:700;color:'+pnlColor+'">'+pnlFmt+'</td>'
+        +'<td style="'+tdR+';color:'+rColor+'">'+(rMult>=0?'+':'')+rMult.toFixed(2)+'R</td>'
+        +'<td style="'+tdR+';color:var(--muted)">'+t.days_held+'d</td>'
+        +'<td style="'+tdL+';color:var(--muted);font-size:10px">'+t.type+'</td>'
+        +'</tr>';
+    }).join('');
+    var totalPnl = pastTrades.reduce(function(s,t){ return s + (parseInt(t.pnl_inr)||0); }, 0);
+    var wins = pastTrades.filter(function(t){ return (parseFloat(t.gain_pct)||0) > 0; }).length;
+    var wr = pastTrades.length > 0 ? Math.round(wins / pastTrades.length * 100) : 0;
+    var totalPnlFmt = (totalPnl>=0?'+':'') + '&#8377;' + Math.abs(totalPnl).toLocaleString('en-IN');
+    ptWrap.innerHTML =
+      '<div style="margin:18px 0 4px;padding:10px 16px;background:rgba(34,211,238,.05);border:1px solid rgba(34,211,238,.2);border-radius:8px">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">'
+        +'<div style="font-size:13px;font-weight:700;color:#22d3ee">&#128203; Past Trades — '+curYear+' (from V4 Trade Journal)</div>'
+        +'<div style="display:flex;gap:16px;font-size:12px">'
+          +'<span><b style="color:'+( wins===pastTrades.length?'var(--green-hi)':wins>0?'#fb923c':'var(--red)')+'">'+wr+'% WR</b> <span style="color:var(--muted)">('+wins+'/'+pastTrades.length+')</span></span>'
+          +'<span><b style="color:'+(totalPnl>=0?'var(--green-hi)':'var(--red)')+'">'+totalPnlFmt+'</b> <span style="color:var(--muted)">total P&L</span></span>'
+        +'</div>'
+      +'</div>'
+      +'<div style="overflow-x:auto">'
+      +'<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      +'<thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.1)">'
+        +'<th style="text-align:left;padding:4px 8px">Stock</th>'
+        +'<th style="text-align:left;padding:4px 8px">Entry</th>'
+        +'<th style="text-align:left;padding:4px 8px">Exit</th>'
+        +'<th style="text-align:right;padding:4px 8px">Entry ₹</th>'
+        +'<th style="text-align:right;padding:4px 8px">Exit ₹</th>'
+        +'<th style="text-align:right;padding:4px 8px">Gain%</th>'
+        +'<th style="text-align:right;padding:4px 8px">P&amp;L ₹</th>'
+        +'<th style="text-align:right;padding:4px 8px">R</th>'
+        +'<th style="text-align:right;padding:4px 8px">Days</th>'
+        +'<th style="text-align:left;padding:4px 8px">Type</th>'
+      +'</tr></thead>'
+      +'<tbody>'+ptRows+'</tbody>'
+      +'</table>'
+      +'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-top:6px">Source: SEPA_V4_Trade_Journal.xlsx &middot; Shows trades entered or exited in '+curYear+'</div>'
+      +'</div>';
+    tpBody.appendChild(ptWrap);
+  }
+}
+
+function renderBreakoutAlerts(stocks, tpBody){
+  // Remove any stale alert cards from a previous render
+  document.querySelectorAll('.alert-card-wrap').forEach(function(el){ el.remove(); });
+
+  function inr(v){ return '₹'+Number(v).toLocaleString('en-IN'); }
+  function fmt2(v){ return v == null ? '—' : Number(v).toFixed(2); }
+  function rsCls(r){ return r >= 90 ? 'g' : r >= 70 ? 'o' : 'r'; }
+  function rsBg(r){ return r >= 90 ? 'rgba(16,185,129,0.15)' : r >= 70 ? 'rgba(249,115,22,0.13)' : 'rgba(239,68,68,0.12)'; }
+  function rsColor(r){ return r >= 90 ? 'var(--green-hi)' : r >= 70 ? '#fb923c' : 'var(--red)'; }
+
+  if(!stocks || stocks.length === 0){
+    var empty = document.createElement('div');
+    empty.className = 'alert-card-wrap';
+    empty.style.cssText = 'padding:40px;text-align:center;color:var(--muted)';
+    empty.innerHTML = '<div style="font-size:28px;margin-bottom:8px">🔔</div><div style="font-size:13px">No VCP breakout alerts right now.</div><div style="font-size:11px;margin-top:4px">Alerts fire when a full-template VCP stock (RS≥83) crosses its pivot with 1.5× volume, or sits within 5% below.</div>';
+    tpBody.appendChild(empty);
+    return;
+  }
+
+  // Sort: BREAKOUT first, then WATCHLIST; within each group: descending RS
+  var sorted = stocks.slice().sort(function(a, b){
+    if(a.alert_type !== b.alert_type) return a.alert_type === 'BREAKOUT' ? -1 : 1;
+    return (b.rs_rank || 0) - (a.rs_rank || 0);
+  });
+
+  sorted.forEach(function(s){
+    var isBreakout = s.alert_type === 'BREAKOUT';
+    var tvUrl = 'https://www.tradingview.com/chart/?symbol=NSE:' + s.ticker;
+    var rsVal = s.rs_rank || 0;
+    var entryPct = s.entry_price ? ((s.entry_price - s.price) / s.price * 100).toFixed(1) : '—';
+    var posValClass = s.position_inr > 500000 ? 'o' : 'g';
+    var rsTrend = s.rs_trending_up
+      ? '<span class="alert-trending">&#9650; RS trending up</span>'
+      : '<span class="alert-flat">RS flat / declining</span>';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'alert-card-wrap';
+    wrap.innerHTML =
+      '<div class="alert-card '+(isBreakout?'breakout':'watchlist')+'">'
+      // Header row
+      +'<div class="alert-card-head">'
+        +'<span class="alert-badge '+(isBreakout?'breakout':'watchlist')+'">'+(isBreakout?'&#128293; BREAKOUT':'&#9201; WATCHLIST')+'</span>'
+        +'<span class="alert-ticker">'+s.ticker+'</span>'
+        +'<span class="alert-rs" style="background:'+rsBg(rsVal)+';color:'+rsColor(rsVal)+'">RS '+rsVal+'</span>'
+        +rsTrend
+        +'<a href="'+tvUrl+'" target="_blank" class="alert-tv-link" style="margin-left:auto">&#128202; Chart</a>'
+      +'</div>'
+      // Alert note
+      +'<div class="alert-note">'+(s.alert_note||'')+'</div>'
+      // Metric grid — 6 cells in 2 rows of 3
+      +'<div class="alert-grid">'
+        +'<div class="alert-metric"><div class="lbl">Entry Price</div><div class="val '+(isBreakout?'o':'')+'">'+inr(s.entry_price)+'</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Stop Price</div><div class="val r">'+inr(s.stop_price)+'</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Stop %</div><div class="val r">'+s.stop_pct+'%</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Shares (₹20L, 2% risk)</div><div class="val">'+Number(s.shares).toLocaleString()+'</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Position Value</div><div class="val '+posValClass+'">'+inr(s.position_inr)+'</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Risk Amount</div><div class="val o">'+inr(s.risk_inr)+'</div></div>'
+      +'</div>'
+      // Secondary row: price, vol, from high
+      +'<div class="alert-grid" style="margin-top:5px">'
+        +'<div class="alert-metric"><div class="lbl">Current Price</div><div class="val">'+inr(s.price)+'</div></div>'
+        +'<div class="alert-metric"><div class="lbl">Vol Ratio</div><div class="val '+(s.vol_ratio>=1.5?'g':s.vol_ratio>=1?'o':'r')+'">'+fmt2(s.vol_ratio)+'×</div></div>'
+        +'<div class="alert-metric"><div class="lbl">From 52W High</div><div class="val '+(s.pct_from_high>=-5?'g':s.pct_from_high>=-15?'o':'r')+'">'+fmt2(s.pct_from_high)+'%</div></div>'
+      +'</div>'
+      // ── Pyramid Plan (V4 trade journal logic) ────────────────────────────
+      +(s.pyr1_price ? (
+        '<div style="margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.07)">'
+        +'<div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin-bottom:5px">&#9650; PYRAMID ADDS (V4)</div>'
+        +'<div class="alert-grid" style="grid-template-columns:repeat(3,1fr)">'
+          +'<div class="alert-metric"><div class="lbl">Add 1 @ +15%</div><div class="val g">'+inr(s.pyr1_price)+'</div><div style="font-size:9px;color:var(--muted)">+50% more shares</div></div>'
+          +'<div class="alert-metric"><div class="lbl">Add 2 @ +30%</div><div class="val g">'+inr(s.pyr2_price)+'</div><div style="font-size:9px;color:var(--muted)">+25% more shares</div></div>'
+          +'<div class="alert-metric"><div class="lbl">Add 3 @ +50%</div><div class="val g">'+inr(s.pyr3_price)+'</div><div style="font-size:9px;color:var(--muted)">+12.5% more shares</div></div>'
+        +'</div>'
+        +'</div>'
+      ) : '')
+      // ── Stop Management (V4: 3R→BE, 4R→trail) ───────────────────────────
+      +(s.r3_price ? (
+        '<div style="margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,255,255,0.07)">'
+        +'<div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--muted);margin-bottom:5px">&#128683; STOP MANAGEMENT (V4)</div>'
+        +'<div class="alert-grid" style="grid-template-columns:repeat(3,1fr)">'
+          +'<div class="alert-metric"><div class="lbl">3R hit @ price</div><div class="val o">'+inr(s.r3_price)+'</div><div style="font-size:9px;color:var(--muted)">→ move stop to breakeven</div></div>'
+          +'<div class="alert-metric"><div class="lbl">4R hit @ price</div><div class="val o">'+inr(s.r4_price)+'</div><div style="font-size:9px;color:var(--muted)">→ trail stop to '+inr(s.trail_stop)+'</div></div>'
+          +'<div class="alert-metric"><div class="lbl">Risk per share</div><div class="val r">'+inr(Math.round(s.risk_inr/(s.shares||1)))+'</div><div style="font-size:9px;color:var(--muted)">1R = this amount</div></div>'
+        +'</div>'
+        +'</div>'
+      ) : '')
+      +'</div>';
+    tpBody.appendChild(wrap);
+  });
 }
 
 // ── IPO TABLE RENDERER ─────────────────────────────────────────────────────────
@@ -1973,7 +2791,7 @@ function _renderBreadthChart(){
       c.lineWidth = 1.5;
       c.stroke();
       c.fillStyle = 'rgba(217,119,6,0.85)';
-      c.font = 'bold 11px DM Mono, monospace';
+      c.font = 'bold 11px Fira Code, monospace';
       c.textAlign = 'left';
       c.fillText('50%', area.right + 4, y50 + 4);
 
@@ -1988,7 +2806,7 @@ function _renderBreadthChart(){
       c.stroke();
       c.setLineDash([]);
       c.fillStyle = 'rgba(6,182,212,0.85)';
-      c.font = '10px DM Mono, monospace';
+      c.font = '10px Fira Code, monospace';
       c.textAlign = 'left';
       c.fillText('40% ★', area.right + 4, y40 + 4);
 
@@ -2037,7 +2855,7 @@ function _renderBreadthChart(){
         x: {
           ticks: {
             color: '#8b949e',
-            font: {family:'DM Mono, monospace',size:11},
+            font: {family:'Fira Code, monospace',size:11},
             maxRotation: 0,
             autoSkip: true,
             maxTicksLimit: 10,
@@ -2047,7 +2865,7 @@ function _renderBreadthChart(){
         },
         y: {
           min: 0, max: 100,
-          ticks: { color: '#8b949e', font: {family:'DM Mono, monospace',size:11}, callback: function(v){ return v + '%'; } },
+          ticks: { color: '#8b949e', font: {family:'Fira Code, monospace',size:11}, callback: function(v){ return v + '%'; } },
           grid: { color: 'rgba(255,255,255,0.04)' }
         }
       },
@@ -2059,8 +2877,8 @@ function _renderBreadthChart(){
           borderWidth: 1,
           titleColor: '#f0f4ff',
           bodyColor: '#94a3b8',
-          bodyFont: {family:'DM Mono, monospace',size:12},
-          titleFont: {family:'DM Mono, monospace',size:12},
+          bodyFont: {family:'Fira Code, monospace',size:12},
+          titleFont: {family:'Fira Code, monospace',size:12},
           callbacks: {
             title: function(t){ return t[0].label; },
             label: function(t){ return ' ' + t.dataset.label + ': ' + t.raw + '%'; },
@@ -2436,6 +3254,10 @@ function downloadCurrentScreen(){
   var isCci            = currentScreen && currentScreen.startsWith('cci34_');
   var isStrongEarnings = currentScreen === 'strong_earnings';
   var isHtf = currentScreen === 'htf_setup' || currentScreen === 'htf_potential' || currentScreen === 'ma_pullback' || currentScreen === 'hhhl_pullback';
+  var isHighs = currentScreen === 'new_highs' || currentScreen === 'ath_highs';
+
+  // For highs screens, delegate to their dedicated exporter (same format as panel button)
+  if(isHighs){ downloadHighsCsv(currentScreen); return; }
 
   // Use filteredStocks (current view, respects search/sort) — fall back to currentStocks
   var stocks = (filteredStocks && filteredStocks.length) ? filteredStocks : currentStocks;
@@ -2443,7 +3265,7 @@ function downloadCurrentScreen(){
   var isBest = currentScreen === 'cci34_best_setups';
 
   if(isFo){
-    rows.push(['Trading Symbol,','Ticker','Price','RS Rank','% from Hi','Vol Ratio','Screens','C/8',
+    rows.push(['Trading Symbol','Ticker','Price','RS Rank','% from Hi','Vol Ratio','Screens','C/8',
       'vs MA50','vs EMA21','vs EMA10',
       'C1','C2','C3','C4','C5','C6','C7','C8','C1-C6',
       'VCP Daily','VCP Weekly','Qtr','EPS YoY','Rev YoY','NP YoY']);
@@ -2471,7 +3293,7 @@ function downloadCurrentScreen(){
       ]);
     });
   } else if(isNewlyAdded){
-    rows.push(['Trading Symbol,','Ticker','Price','RS Rank','% from Hi','Vol Ratio','New In Screens','C/8','In MTF']);
+    rows.push(['Trading Symbol','Ticker','Price','RS Rank','% from Hi','Vol Ratio','New In Screens','C/8','In MTF']);
     stocks.forEach(function(s){
       var sym = (s.ticker||'').replace('.NS','');
       rows.push([sym+',', sym,
@@ -2485,7 +3307,7 @@ function downloadCurrentScreen(){
       ]);
     });
   } else if(isStrongEarnings){
-    rows.push(['Trading Symbol,','Ticker','Price','RS Rank','Quarter','Rev YoY','Rev QoQ','NP YoY','NP QoQ','EPS YoY','EPS QoQ','CCI Daily','CCI Weekly','% from 52W High','Vol Ratio','VCP Daily','VCP Weekly']);
+    rows.push(['Trading Symbol','Ticker','Price','RS Rank','Quarter','Rev YoY','Rev QoQ','NP YoY','NP QoQ','EPS YoY','EPS QoQ','CCI Daily','CCI Weekly','% from 52W High','Vol Ratio','VCP Daily','VCP Weekly']);
     stocks.forEach(function(s){
       var sym = (s.ticker||'').replace('.NS','');
       rows.push([sym+',', sym,
@@ -2505,7 +3327,7 @@ function downloadCurrentScreen(){
     });
   } else if(isBest){
     rows.push([
-      'Trading Symbol,','Ticker','Price','RS Rank','Criteria Passed',
+      'Trading Symbol','Ticker','Price','RS Rank','Criteria Passed',
       '% from 52W High','Vol Ratio',
       'CCI Daily','CCI Weekly','Signals',
       '% from MA50','% from EMA21','% from EMA10',
@@ -2543,7 +3365,7 @@ function downloadCurrentScreen(){
     });
   } else if(isCci){
     var tf = currentScreen.includes('weekly') ? 'Weekly' : 'Daily';
-    rows.push(['Trading Symbol,','Ticker','Price','RS Rank','CCI34 '+tf,'Prev CCI','% from MA50','% from EMA21','% from EMA10','Prev Pivot High','% from Pivot','Pivot Crossed','Date','VCP Daily','VCP Weekly','Qtr','EPS YoY','EPS QoQ','Rev YoY','Rev QoQ','NP YoY','NP QoQ']);
+    rows.push(['Trading Symbol','Ticker','Price','RS Rank','CCI34 '+tf,'Prev CCI','% from MA50','% from EMA21','% from EMA10','Prev Pivot High','% from Pivot','Pivot Crossed','Date','VCP Daily','VCP Weekly','Qtr','EPS YoY','EPS QoQ','Rev YoY','Rev QoQ','NP YoY','NP QoQ']);
     stocks.forEach(function(s){
       var sym = (s.ticker||'').replace('.NS','');
       rows.push([sym+',', sym,
@@ -2570,7 +3392,7 @@ function downloadCurrentScreen(){
     var isMaPb = currentScreen === 'ma_pullback';
     var isHhhlCsv = currentScreen === 'hhhl_pullback';
     if(isHhhlCsv){
-      rows.push(['Trading Symbol,','Ticker','Price','RS Rank','Recent HH','Recent HL','Pullback%','% above HL','% from High','Vol Ratio','VCP Daily','VCP Weekly','Qtr','EPS YoY','EPS QoQ','Rev YoY','Rev QoQ','NP YoY','NP QoQ']);
+      rows.push(['Trading Symbol','Ticker','Price','RS Rank','Recent HH','Recent HL','Pullback%','% above HL','% from High','Vol Ratio','VCP Daily','VCP Weekly','Qtr','EPS YoY','EPS QoQ','Rev YoY','Rev QoQ','NP YoY','NP QoQ']);
       stocks.forEach(function(s){
         var sym = (s.ticker||'').replace('.NS','');
         rows.push([sym+',', sym,
@@ -2592,9 +3414,9 @@ function downloadCurrentScreen(){
       // skip the rest of isHtf block
     } else
     if(isMaPb){
-      rows.push(['Trading Symbol,','Ticker','Price','RS Rank','Near MA','vs MA50','vs EMA21','vs EMA10','% from High','Qtr','EPS YoY','EPS QoQ','Rev YoY','Rev QoQ','NP YoY','NP QoQ']);
+      rows.push(['Trading Symbol','Ticker','Price','RS Rank','Near MA','vs MA50','vs EMA21','vs EMA10','% from High','Qtr','EPS YoY','EPS QoQ','Rev YoY','Rev QoQ','NP YoY','NP QoQ']);
     } else {
-      rows.push(['Trading Symbol,','Ticker','Price','RS Rank','Pole Gain%','Pole Days','Days Since Peak','% from Peak','Qtr','EPS YoY','EPS QoQ','Rev YoY','Rev QoQ','NP YoY','NP QoQ']);
+      rows.push(['Trading Symbol','Ticker','Price','RS Rank','Pole Gain%','Pole Days','Days Since Peak','% from Peak','Qtr','EPS YoY','EPS QoQ','Rev YoY','Rev QoQ','NP YoY','NP QoQ']);
     }
     stocks.forEach(function(s){
       var sym = (s.ticker||'').replace('.NS','');
@@ -2629,7 +3451,7 @@ function downloadCurrentScreen(){
     });
   } else if(isIpo){
     rows.push([
-      'Trading Symbol,',
+      'Trading Symbol',
       'Ticker','Price','RS Rank','Days Listed',
       '% from Listing High','% above Listing Low',
       'Vol Ratio','Above MA50','First Seen'
@@ -2650,7 +3472,7 @@ function downloadCurrentScreen(){
     });
   } else {
     rows.push([
-      'Trading Symbol,',
+      'Trading Symbol',
       'Ticker','Price','RS Rank','Criteria Passed',
       '52W High','52W Low',
       '% from High','% above Low',
@@ -2769,7 +3591,9 @@ function applyFilter(){
 
   var isBest = currentScreen === 'cci34_best_setups';
 
-  filteredStocks = currentStocks.filter(function(s){
+  var isHighsScreen = currentScreen === 'new_highs' || currentScreen === 'ath_highs';
+  var chipBase = isHighsScreen ? _applyHighsChip(_activeHighsChip, currentStocks) : currentStocks;
+  filteredStocks = chipBase.filter(function(s){
     // Ticker search — also matches cci_signals for best setups
     var tickerMatch = !q || s.ticker.toLowerCase().replace('.ns','').includes(q);
     var sigMatch    = isBest && q && (s.cci_signals || '').toLowerCase().includes(q);
@@ -2833,8 +3657,14 @@ function applyFilter(){
     renderFoTable(filteredStocks);
   } else if(currentScreen && (currentScreen.startsWith('cci34_') || currentScreen === 'strong_earnings')){
     renderCciTable(filteredStocks, currentScreen);
-  } else if(currentScreen === 'htf_setup' || currentScreen === 'htf_potential' || currentScreen === 'ma_pullback' || currentScreen === 'hhhl_pullback' || currentScreen === 'primary_base_new' || currentScreen === 'primary_base_10yr'){
+  } else if(currentScreen === 'ipo_base' || currentScreen === 'ipo_near_pivot'){
+    renderIpoBaseTable(filteredStocks);
+  } else if(currentScreen === 'high_ma20'){
+    renderHighMA20Table(filteredStocks);
+  } else if(currentScreen === 'htf_setup' || currentScreen === 'htf_potential' || currentScreen === 'ma_pullback' || currentScreen === 'hhhl_pullback' || currentScreen === 'weekly_hl_pivot' || currentScreen === 'primary_base_new' || currentScreen === 'primary_base_10yr'){
     renderHtfTable(filteredStocks, currentScreen);
+  } else if(currentScreen === 'new_highs' || currentScreen === 'ath_highs'){
+    _renderHighsRows(filteredStocks, currentScreen);
   } else {
     renderTable();
   }
@@ -2912,7 +3742,7 @@ function renderChartinkTable(stocks, screenKey){
         : '<span style="color:var(--muted);font-size:10px">—</span>')+'</td>';
     }
     html += '<tr class="stock-row" onclick="selectStock(\''+s.ticker+'\')" data-ticker="'+s.ticker+'">'
-      +'<td><strong style="color:'+tkCol+'">'+s.ticker+'</strong>'+((!isMtfScreen&&!inMtf)?' <span class="ck-badge">NSE</span>':'')+'</td>'
+      +'<td><strong style="color:'+tkCol+'">'+s.ticker+'</strong>'+((!isMtfScreen&&!inMtf)?' <span class="ck-badge">NSE</span>':'')+_newBadge(s)+'</td>'
       +'<td>'+price+'</td>'
       +'<td><span style="color:'+rsCol+';font-weight:700">'+rs+'</span></td>'
       +col4
@@ -2994,7 +3824,7 @@ function renderFoTable(stocks){
     var cr = s.criteria || {};
     var c1c6 = cr.c1 && cr.c2 && cr.c3 && cr.c4 && cr.c5 && cr.c6;
     html += '<tr class="stock-row" onclick="selectStock(\''+s.ticker+'\')" data-ticker="'+s.ticker+'">'
-      +'<td><strong style="color:#a78bfa">'+s.ticker+'</strong></td>'
+      +'<td><strong style="color:#a78bfa">'+s.ticker+'</strong>'+_newBadge(s)+'</td>'
       +'<td>'+_currencySymbol+num(s.price)+'</td>'
       +'<td><span style="color:'+(s.rs_rank>=85?'var(--green)':s.rs_rank>=70?'var(--text)':'var(--amber)')+';font-weight:700">'+s.rs_rank+'</span></td>'
       +(isYouth ? '<td style="color:'+listedCol+';font-weight:700">'+listedAge+'</td>' : '')
@@ -3272,7 +4102,7 @@ function renderNewlyAddedTable(stocks){
   var html = '';
   visible.forEach(function(s){
     var sym = (s.ticker||'').replace('.NS','');
-    var tv  = s.tv_symbol || ('NSE:'+sym);
+    var tv  = sym+',';
     var niList = s.new_in_screens || [];
     var niHtml = niList.map(function(nm){
       var col = _NI_COL[nm] || '#94a3b8';
@@ -3307,9 +4137,10 @@ function renderHtfTable(stocks, screenKey){
   tbl.style.display = '';
   count.textContent = stocks.length + ' stocks';
 
-  var isMaPb   = screenKey === 'ma_pullback';
-  var isHhhl   = screenKey === 'hhhl_pullback';
+  var isMaPb    = screenKey === 'ma_pullback';
+  var isHhhl    = screenKey === 'hhhl_pullback';
   var isPrimary = screenKey === 'primary_base_new' || screenKey === 'primary_base_10yr';
+  var isWhlPiv  = screenKey === 'weekly_hl_pivot';
   var thead = tbl.querySelector('thead');
 
   if(isMaPb){
@@ -3371,6 +4202,25 @@ function renderHtfTable(stocks, screenKey){
       +'<th onclick="sortBy(\'q_rev_qoq\')">Rev QoQ</th>'
       +'<th onclick="sortBy(\'q_np_yoy\')">NP YoY</th>'
       +'<th onclick="sortBy(\'q_np_qoq\')">NP QoQ</th>'
+      +'</tr>';
+  } else if(isWhlPiv){
+    thead.innerHTML = '<tr>'
+      +'<th style="text-align:left" onclick="sortBy(\'ticker\')">Ticker</th>'
+      +'<th onclick="sortBy(\'price\')">Price</th>'
+      +'<th onclick="sortBy(\'rs_rank\')">RS</th>'
+      +'<th onclick="sortBy(\'weekly_hl\')" title="Most recent confirmed Higher Low price on weekly chart">W Higher Low</th>'
+      +'<th onclick="sortBy(\'prev_weekly_hl\')" title="Previous Higher Low — current HL must be above this">Prev HL</th>'
+      +'<th onclick="sortBy(\'hl_step_pct\')" title="How much higher the new HL is vs previous — larger = stronger accumulation">HL Step%</th>'
+      +'<th onclick="sortBy(\'weekly_hl_age_wks\')" title="How many weeks ago the Higher Low confirmed (0 = just formed)">HL Age</th>'
+      +'<th onclick="sortBy(\'pct_above_hl\')" title="% current price is above the recent HL — near 0 = at support, ideal entry">% above HL</th>'
+      +'<th onclick="sortBy(\'weekly_hh\')" title="Most recent confirmed Higher High — next resistance / target">W Higher High</th>'
+      +'<th onclick="sortBy(\'pct_from_hh\')" title="% from the recent HH (upside potential to resistance)">% from HH</th>'
+      +'<th onclick="sortBy(\'vol_ratio\')">Vol</th>'
+      +'<th onclick="sortBy(\'vcp_last_weekly\')">VCP-W</th>'
+      +'<th onclick="sortBy(\'q_label\')">Qtr</th>'
+      +'<th onclick="sortBy(\'q_eps_yoy\')">EPS YoY</th>'
+      +'<th onclick="sortBy(\'q_rev_yoy\')">Rev YoY</th>'
+      +'<th onclick="sortBy(\'q_np_yoy\')">NP YoY</th>'
       +'</tr>';
   } else {
     thead.innerHTML = '<tr>'
@@ -3452,6 +4302,26 @@ function renderHtfTable(stocks, screenKey){
       html += '<td style="color:'+hlCol+';font-weight:'+(s.hhhl_pct_from_hl<=3?'700':'400')+'">'+aboveHl+'</td>';
       html += '<td style="color:'+hiCol+'">'+fromHi+'</td>';
       html += '<td style="color:'+volCol+'">'+vol+'</td>';
+    } else if(isWhlPiv){
+      var wHl      = s.weekly_hl      != null ? _currencySymbol+num(s.weekly_hl)      : '—';
+      var prevHl   = s.prev_weekly_hl != null ? _currencySymbol+num(s.prev_weekly_hl) : '—';
+      var hlStep   = s.hl_step_pct    != null ? '+'+s.hl_step_pct.toFixed(1)+'%'     : '—';
+      var hlStepCol= s.hl_step_pct    != null && s.hl_step_pct >= 5 ? 'var(--green)' : 'var(--amber)';
+      var hlAge    = s.weekly_hl_age_wks != null ? (s.weekly_hl_age_wks === 0 ? 'This week' : s.weekly_hl_age_wks === 1 ? 'Last week' : s.weekly_hl_age_wks+'w ago') : '—';
+      var hlAgeCol = s.weekly_hl_age_wks != null && s.weekly_hl_age_wks <= 1 ? 'var(--green)' : s.weekly_hl_age_wks <= 3 ? 'var(--amber)' : 'var(--text)';
+      var abvHl    = s.pct_above_hl   != null ? s.pct_above_hl.toFixed(1)+'%'        : '—';
+      var abvHlCol = s.pct_above_hl   != null && s.pct_above_hl <= 8 ? 'var(--green)' : s.pct_above_hl <= 20 ? 'var(--amber)' : 'var(--text)';
+      var wHh      = s.weekly_hh      != null ? _currencySymbol+num(s.weekly_hh)      : '—';
+      var fromHhPct= s.pct_from_hh    != null ? s.pct_from_hh.toFixed(1)+'%'         : '—';
+      var fromHhCol= s.pct_from_hh    != null && s.pct_from_hh >= -5 ? 'var(--green)' : 'var(--text)';
+      html += '<td style="color:var(--cyan);font-weight:700;font-size:11px">'+wHl+'</td>';
+      html += '<td style="color:var(--muted);font-size:11px">'+prevHl+'</td>';
+      html += '<td style="color:'+hlStepCol+';font-weight:700">'+hlStep+'</td>';
+      html += '<td style="color:'+hlAgeCol+'">'+hlAge+'</td>';
+      html += '<td style="color:'+abvHlCol+';font-weight:'+(s.pct_above_hl<=8?'700':'400')+'">'+abvHl+'</td>';
+      html += '<td style="color:var(--muted);font-size:11px">'+wHh+'</td>';
+      html += '<td style="color:'+fromHhCol+'">'+fromHhPct+'</td>';
+      html += '<td style="color:'+volCol+'">'+vol+'</td>';
     } else {
       var gain = s.htf_gain_pct != null ? s.htf_gain_pct.toFixed(1)+'%' : '—';
       var gainCol = s.htf_gain_pct >= 100 ? 'var(--green)' : 'var(--amber)';
@@ -3467,10 +4337,10 @@ function renderHtfTable(stocks, screenKey){
       html += '<td style="color:'+volCol+'">'+vol+'</td>';
     }
 
-    html += '<td style="color:var(--muted);font-size:11px">'+(s.vcp_last_daily||'–')+'</td>';
+    if(!isWhlPiv) html += '<td style="color:var(--muted);font-size:11px">'+(s.vcp_last_daily||'–')+'</td>';
     html += '<td style="color:var(--muted);font-size:11px">'+(s.vcp_last_weekly||'–')+'</td>';
     html += _qLabel(s.q_label);
-    if(isPrimary){
+    if(isPrimary || isWhlPiv){
       html += _qPct(s.q_eps_yoy, true);
       html += _qPct(s.q_rev_yoy, false);
       html += _qPct(s.q_np_yoy,  false);
@@ -3487,6 +4357,103 @@ function renderHtfTable(stocks, screenKey){
   });
   tbody.innerHTML = html;
   _renderLoadMore(stocks.length, 'renderHtfTable');
+}
+
+function renderIpoBaseTable(stocks){
+  var tbl   = document.getElementById('stock-table');
+  var tbody = document.getElementById('stock-tbody');
+  var empty = document.getElementById('empty-state');
+  var count = document.getElementById('tp-count');
+  tbl.style.display = '';
+  count.textContent = stocks.length + ' stocks';
+
+  var thead = tbl.querySelector('thead');
+  thead.innerHTML = '<tr>'
+    +'<th style="text-align:left" onclick="sortBy(\'ticker\')">Ticker</th>'
+    +'<th onclick="sortBy(\'price\')">Price</th>'
+    +'<th onclick="sortBy(\'rs_rank\')">RS</th>'
+    +'<th onclick="sortBy(\'months_listed\')" title="Months since listing — must be ≤18">Listed</th>'
+    +'<th onclick="sortBy(\'pct_from_ath\')" title="% below all-time high — tighter = better">% from ATH</th>'
+    +'<th onclick="sortBy(\'base_range_pct\')" title="Base price range % (high-to-low) — must be <20%">Base Range</th>'
+    +'<th onclick="sortBy(\'tight_range_pct\')" title="Range in last 2 weeks — tighter = coiling">2W Tight</th>'
+    +'<th onclick="sortBy(\'base_days\')" title="Number of trading days in the base">Base Days</th>'
+    +'<th onclick="sortBy(\'base_vol_ratio\')" title="Base avg volume vs pre-base — <0.8 = drying up (constructive)">Vol Dry-up</th>'
+    +'<th onclick="sortBy(\'weekly_pivot\')" title="Highest weekly high in the last 2-4 weeks — the exact Minervini buy point">W Pivot</th>'
+    +'<th onclick="sortBy(\'pct_from_weekly_pivot\')" title="% from weekly pivot: negative = below pivot (building base), near 0 = at buy point, positive = broke out">% from Pivot</th>'
+    +'<th onclick="sortBy(\'vol_ratio\')">Today Vol</th>'
+    +'<th onclick="sortBy(\'vcp_last_daily\')">VCP-D</th>'
+    +'<th onclick="sortBy(\'vcp_last_weekly\')">VCP-W</th>'
+    +'<th onclick="sortBy(\'q_label\')">Qtr</th>'
+    +'<th onclick="sortBy(\'q_eps_yoy\')">EPS YoY</th>'
+    +'<th onclick="sortBy(\'q_rev_yoy\')">Rev YoY</th>'
+    +'<th onclick="sortBy(\'q_np_yoy\')">NP YoY</th>'
+    +'</tr>';
+
+  if(!stocks.length){
+    tbody.innerHTML = '';
+    empty.style.display = 'flex';
+    return;
+  }
+  empty.style.display = 'none';
+
+  var visible = stocks.slice(0, _displayedRows);
+  var html = '';
+  visible.forEach(function(s){
+    var rsCol  = s.rs_rank>=85?'var(--green)':s.rs_rank>=70?'var(--text)':'var(--amber)';
+    var volCol = s.vol_ratio >= 1.5 ? 'var(--green)' : s.vol_ratio >= 0.8 ? 'var(--text)' : 'var(--muted)';
+    var vol    = s.vol_ratio != null ? s.vol_ratio.toFixed(2)+'×' : '—';
+
+    var months    = s.months_listed != null ? s.months_listed.toFixed(1)+'mo' : '—';
+    var mCol      = s.months_listed != null && s.months_listed <= 12 ? 'var(--green)' : 'var(--amber)';
+
+    var athPct    = s.pct_from_ath   != null ? s.pct_from_ath.toFixed(1)+'%'   : '—';
+    var athCol    = s.pct_from_ath   != null && s.pct_from_ath >= -5 ? 'var(--green)' : s.pct_from_ath >= -10 ? 'var(--amber)' : 'var(--text)';
+
+    var bRange    = s.base_range_pct != null ? s.base_range_pct.toFixed(1)+'%' : '—';
+    var bRCol     = s.base_range_pct != null && s.base_range_pct <= 12 ? 'var(--green)' : s.base_range_pct <= 17 ? 'var(--amber)' : 'var(--text)';
+
+    var tRange    = s.tight_range_pct != null ? s.tight_range_pct.toFixed(1)+'%' : '—';
+    var tRCol     = s.tight_range_pct != null && s.tight_range_pct <= 8 ? 'var(--green)' : s.tight_range_pct <= 14 ? 'var(--amber)' : 'var(--text)';
+
+    var bDays     = s.base_days != null ? s.base_days+'d' : '—';
+
+    var bVolR     = s.base_vol_ratio != null ? s.base_vol_ratio.toFixed(2)+'×' : '—';
+    var bVolCol   = s.base_vol_ratio != null && s.base_vol_ratio < 0.6 ? 'var(--green)' : s.base_vol_ratio < 0.8 ? 'var(--amber)' : 'var(--text)';
+
+    html += '<tr class="stock-row" onclick="selectStock(\''+s.ticker+'\')" data-ticker="'+s.ticker+'">';
+    html += '<td><strong style="color:var(--cyan)">'+s.ticker+'</strong></td>';
+    html += '<td>'+_currencySymbol+num(s.price)+'</td>';
+    html += '<td><span style="color:'+rsCol+';font-weight:700">'+s.rs_rank+'</span></td>';
+    html += '<td style="color:'+mCol+';font-weight:700">'+months+'</td>';
+    html += '<td style="color:'+athCol+';font-weight:700">'+athPct+'</td>';
+    html += '<td style="color:'+bRCol+';font-weight:700">'+bRange+'</td>';
+    html += '<td style="color:'+tRCol+'">'+tRange+'</td>';
+    html += '<td style="color:var(--muted)">'+bDays+'</td>';
+    html += '<td style="color:'+bVolCol+';font-weight:700">'+bVolR+'</td>';
+
+    var pivotPrice = s.weekly_pivot != null ? _currencySymbol+num(s.weekly_pivot) : '—';
+    var pivotPct   = s.pct_from_weekly_pivot != null ? s.pct_from_weekly_pivot.toFixed(1)+'%' : '—';
+    // Green: within 3% below or above pivot (buy zone). Amber: 3-10% below. Muted: >10% below. Cyan: broke out >5%.
+    var pivotPctCol = s.pct_from_weekly_pivot == null ? 'var(--muted)'
+      : s.pct_from_weekly_pivot > 5   ? 'var(--cyan)'
+      : s.pct_from_weekly_pivot >= -3 ? 'var(--green)'
+      : s.pct_from_weekly_pivot >= -10? 'var(--amber)'
+      : 'var(--text)';
+    html += '<td style="color:var(--muted);font-size:11px">'+pivotPrice+'</td>';
+    html += '<td style="color:'+pivotPctCol+';font-weight:700">'+pivotPct+'</td>';
+
+    html += '<td style="color:'+volCol+'">'+vol+'</td>';
+    html += '<td style="color:var(--muted);font-size:11px">'+(s.vcp_last_daily||'–')+'</td>';
+    html += '<td style="color:var(--muted);font-size:11px">'+(s.vcp_last_weekly||'–')+'</td>';
+    html += _qLabel(s.q_label);
+    html += _qPct(s.q_eps_yoy, true);
+    html += _qPct(s.q_rev_yoy, false);
+    html += _qPct(s.q_np_yoy,  false);
+    html += _passedBadge(s);
+    html += '</tr>';
+  });
+  tbody.innerHTML = html;
+  _renderLoadMore(stocks.length, 'renderIpoBaseTable');
 }
 
 // ── QUARTERLY FINANCIALS HELPERS ──────────────────────────────────────────────
@@ -3543,6 +4510,1108 @@ function _pivotCell(s){
   return '<td style="line-height:1.6">'+d+w+'</td>';
 }
 
+// ── 52W NEW HIGHS + ALL-TIME HIGHS ───────────────────────────────────────────
+function _buildAthData(){
+  var seen = {};
+  var result = [];
+  Object.keys(D.screens || {}).forEach(function(sk){
+    var scr = D.screens[sk];
+    if(!scr || !scr.stocks) return;
+    scr.stocks.forEach(function(s){
+      if(seen[s.ticker]) return;
+      var nearAth = (s.pct_from_ath != null && s.pct_from_ath >= -5)
+                 || (s.pct_from_ath == null && s.pct_from_high != null && s.pct_from_high >= -2);
+      if(nearAth){ seen[s.ticker] = true; result.push(s); }
+    });
+  });
+  result.sort(function(a,b){ return (b.rs_rank||0)-(a.rs_rank||0); });
+  var el = document.getElementById('cnt-ath_highs');
+  if(el) el.textContent = result.length;
+  return result;
+}
+
+// ── RS LINE TRENDING ──────────────────────────────────────────────────────────
+function _buildRsTrendingData(){
+  var seen = {};
+  var all = [];
+  Object.keys(D.screens || {}).forEach(function(sk){
+    var scr = D.screens[sk];
+    if(!scr || !scr.stocks) return;
+    scr.stocks.forEach(function(s){
+      if(seen[s.ticker]) return;
+      if(s.rs_trending_up === true){
+        seen[s.ticker] = true;
+        all.push(s);
+      }
+    });
+  });
+  all.sort(function(a,b){ return (b.rs_rank||0)-(a.rs_rank||0); });
+  var minervini = all.filter(function(s){ return (s.passed||0) >= 7; });
+
+  var elAll = document.getElementById('cnt-rs_trending');
+  var elMin = document.getElementById('cnt-rs_trending_minervini');
+  if(elAll) elAll.textContent = all.length;
+  if(elMin) elMin.textContent = minervini.length;
+  return { all: all, minervini: minervini };
+}
+
+function renderRsTrendingTable(stocks, type){
+  var isMini = type === 'rs_trending_minervini';
+  var tbl = document.getElementById('stock-table');
+  tbl.style.display = '';
+
+  ['rs-trend-banner','rs-trend-filter-bar'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.remove();
+  });
+
+  var tpBody = document.querySelector('.tp-body');
+
+  // ── Filter bar ──────────────────────────────────────────────────────────────
+  var filterBar = document.createElement('div');
+  filterBar.id = 'rs-trend-filter-bar';
+  filterBar.style.cssText = 'padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+  var chipDefs = [
+    {k:'all', l:'All'},
+    {k:'tt8', l:'Full Template (8/8)'},
+    {k:'rs80', l:'RS ≥ 80'},
+    {k:'vcp',  l:'VCP Setup'},
+  ];
+  var chipsHtml = chipDefs.map(function(c){
+    return '<button class="highs-chip'+(c.k==='all'?' active':'')+'" data-filter="'+c.k+'" onclick="applyRsTrendFilter(this,\''+type+'\')">'
+      +c.l+'</button>';
+  }).join('');
+  filterBar.innerHTML = '<span style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.1px;flex-shrink:0">Filter:</span>'
+    +chipsHtml;
+  tpBody.insertBefore(filterBar, tpBody.firstChild);
+
+  // ── Banner ──────────────────────────────────────────────────────────────────
+  var banner = document.createElement('div');
+  banner.id = 'rs-trend-banner';
+  var accentCol = '#a3e635';
+  var bgCol     = 'rgba(163,230,53,.06)';
+  var borderCol = 'rgba(163,230,53,.3)';
+  banner.style.cssText = 'padding:10px 20px;background:'+bgCol+';border-bottom:2px solid '+borderCol+';flex-shrink:0;display:flex;align-items:center;gap:12px';
+  banner.innerHTML = '<span style="font-size:22px">'+(isMini?'⭐':'↗')+'</span>'
+    +'<div>'
+    +'<div style="font-size:13px;font-weight:700;color:'+accentCol+'">'
+    +(isMini
+      ? 'RS Trend + Minervini — '+stocks.length+' stocks (RS trending up + ≥7/8 criteria)'
+      : 'RS Line Trending Up — '+stocks.length+' stocks across all screens')
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'
+    +(isMini
+      ? 'Highest-conviction setups: RS Line strengthening AND ≥7 Minervini Trend Template criteria met.'
+      : '3-month RS return is stronger than 20 days ago — RS Line accelerating. Deduplicated across all screens, sorted by RS rank.')
+    +'</div></div>'
+    +'<button onclick="downloadRsTrendCsv(\''+type+'\')" style="margin-left:auto;padding:6px 16px;background:rgba(163,230,53,.13);border:1px solid rgba(163,230,53,.35);color:#a3e635;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;white-space:nowrap;display:flex;align-items:center;gap:5px">'
+    +'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+    +' Download CSV</button>';
+  tpBody.insertBefore(banner, tpBody.firstChild);
+
+  _renderRsTrendRows(stocks, type);
+}
+
+function applyRsTrendFilter(btn, type){
+  document.querySelectorAll('#rs-trend-filter-bar .highs-chip').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  var f = btn.dataset.filter;
+  var rsData = _buildRsTrendingData();
+  var base = type === 'rs_trending_minervini' ? rsData.minervini : rsData.all;
+  var filtered = base.filter(function(s){
+    if(f === 'tt8')  return (s.passed||0) >= 8;
+    if(f === 'rs80') return (s.rs_rank||0) >= 80;
+    if(f === 'vcp')  return s.vcp_last_daily || s.vcp_last_weekly;
+    return true;
+  });
+  currentStocks  = base;
+  filteredStocks = filtered;
+  _displayedRows = PAGE_SIZE;
+  _renderRsTrendRows(filtered, type);
+}
+
+function downloadRsTrendCsv(type){
+  var rows = [['Ticker','RS Rank','Passed','Price','% from High','Vol Ratio','VCP Daily','VCP Weekly']];
+  filteredStocks.forEach(function(s){
+    rows.push([s.ticker, s.rs_rank||'', s.passed||'', s.price||'', s.pct_from_high!=null?s.pct_from_high.toFixed(1):'',
+      s.vol_ratio!=null?s.vol_ratio.toFixed(2):'', s.vcp_last_daily||'', s.vcp_last_weekly||'']);
+  });
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = (type==='rs_trending_minervini'?'rs_trend_minervini':'rs_trend_all')+'.csv';
+  a.click();
+}
+
+function _renderRsTrendRows(stocks, type){
+  var tbl = document.getElementById('stock-table');
+  var isMini = type === 'rs_trending_minervini';
+  var cols = ['Ticker','RS','Passed','Price','% High','Vol×','VCP Daily','VCP Weekly'];
+  var thead = '<thead><tr>'+cols.map(function(c){ return '<th>'+c+'</th>'; }).join('')+'</tr></thead>';
+  var rows = '';
+  var shown = Math.min(stocks.length, _displayedRows || PAGE_SIZE);
+  for(var i=0;i<shown;i++){
+    var s = stocks[i];
+    var passedCol = (s.passed||0)>=8 ? 'var(--green-hi)' : (s.passed||0)>=7 ? 'var(--amber)' : 'var(--text2)';
+    var volCol = (s.vol_ratio||0)>=1.5 ? 'var(--green-hi)' : (s.vol_ratio||0)>=1.0 ? 'var(--amber)' : 'var(--text2)';
+    var vcpD = s.vcp_last_daily  ? '<span style="color:var(--green-hi);font-size:10px">✓ '+s.vcp_last_daily+'</span>'  : '<span style="color:var(--muted)">—</span>';
+    var vcpW = s.vcp_last_weekly ? '<span style="color:var(--green-hi);font-size:10px">✓ '+s.vcp_last_weekly+'</span>' : '<span style="color:var(--muted)">—</span>';
+    var tvUrl = 'https://www.tradingview.com/chart/?symbol='+(s.tv_symbol||('NSE:'+s.ticker));
+    rows += '<tr onclick="window.open(\''+tvUrl+'\',\'_blank\')" style="cursor:pointer">'
+      +'<td style="font-weight:700;color:var(--text);font-family:\'Fira Code\',monospace">'+s.ticker
+        +'<span style="display:inline-block;margin-left:5px;font-size:9px;background:rgba(163,230,53,.15);color:#a3e635;border-radius:3px;padding:1px 4px">↗</span>'
+        +'</td>'
+      +'<td><span style="background:rgba(37,99,235,.15);color:#93c5fd;padding:1px 6px;border-radius:10px;font-size:11px;font-family:\'Fira Code\',monospace">'+(s.rs_rank||'—')+'</span></td>'
+      +'<td style="color:'+passedCol+';font-weight:600">'+(s.passed!=null?s.passed+'/8':'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace">&#8377;'+(s.price!=null?num(s.price):'—')+'</td>'
+      +'<td style="color:'+(s.pct_from_high!=null&&s.pct_from_high>=-5?'var(--green-hi)':'var(--text2)')+';">'+(s.pct_from_high!=null?(s.pct_from_high>0?'+':'')+s.pct_from_high.toFixed(1)+'%':'—')+'</td>'
+      +'<td style="color:'+volCol+';font-family:\'Fira Code\',monospace">'+(s.vol_ratio!=null?s.vol_ratio.toFixed(2)+'×':'—')+'</td>'
+      +'<td>'+vcpD+'</td>'
+      +'<td>'+vcpW+'</td>'
+      +'</tr>';
+  }
+  if(shown < stocks.length){
+    rows += '<tr><td colspan="'+cols.length+'" style="text-align:center;padding:14px;color:var(--text2)">'
+      +'<button onclick="_loadMoreRsTrend(\''+type+'\')" style="padding:6px 20px;background:rgba(163,230,53,.12);border:1px solid rgba(163,230,53,.3);color:#a3e635;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">'
+      +'Load more ('+(stocks.length-shown)+' remaining)</button></td></tr>';
+  }
+  tbl.innerHTML = thead+'<tbody>'+rows+'</tbody>';
+}
+
+function _loadMoreRsTrend(type){
+  _displayedRows = (_displayedRows||PAGE_SIZE) + PAGE_SIZE;
+  _renderRsTrendRows(filteredStocks, type);
+}
+
+// ── NEAR PIVOT DAILY ──────────────────────────────────────────────────────────
+function _buildDailyPivotData(){
+  var seen = {};
+  var result = [];
+  Object.keys(D.screens || {}).forEach(function(sk){
+    var scr = D.screens[sk];
+    if(!scr || !scr.stocks) return;
+    scr.stocks.forEach(function(s){
+      if(seen[s.ticker]) return;
+      var pd = s.pct_from_pivot;
+      if(pd != null && pd >= -5 && pd <= 5 && s.pivot_high != null){
+        seen[s.ticker] = true;
+        result.push(s);
+      }
+    });
+  });
+  result.sort(function(a,b){ return Math.abs(a.pct_from_pivot||0) - Math.abs(b.pct_from_pivot||0); });
+  var el = document.getElementById('cnt-daily_near_pivot');
+  if(el) el.textContent = result.length;
+  return result;
+}
+
+function renderDailyPivotTable(stocks){
+  var tbl = document.getElementById('stock-table');
+  tbl.style.display = '';
+
+  ['dpivot-banner','dpivot-filter-bar'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.remove();
+  });
+
+  var tpBody = document.querySelector('.tp-body');
+
+  // ── Filter bar ─────────────────────────────────────────────────────────────
+  var filterBar = document.createElement('div');
+  filterBar.id = 'dpivot-filter-bar';
+  filterBar.style.cssText = 'padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+  var chipDefs = [
+    {k:'all',   l:'All (±5%)'},
+    {k:'below', l:'Approaching (below pivot)'},
+    {k:'above', l:'Just Above (0%–5%)'},
+    {k:'tt8',   l:'Full Template (8/8)'},
+    {k:'rs70',  l:'RS ≥ 70'},
+  ];
+  var chipsHtml = chipDefs.map(function(c){
+    return '<button class="highs-chip'+(c.k==='all'?' active':'')+'" data-filter="'+c.k+'" onclick="applyDPivotFilter(this)">'
+      +c.l+'</button>';
+  }).join('');
+  filterBar.innerHTML = '<span style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.1px;flex-shrink:0">Filter:</span>'+chipsHtml;
+  tpBody.insertBefore(filterBar, tpBody.firstChild);
+
+  // ── Banner ─────────────────────────────────────────────────────────────────
+  var banner = document.createElement('div');
+  banner.id = 'dpivot-banner';
+  banner.style.cssText = 'padding:10px 20px;background:rgba(56,189,248,.06);border-bottom:2px solid rgba(56,189,248,.3);flex-shrink:0;display:flex;align-items:center;gap:12px';
+  banner.innerHTML = '<span style="font-size:22px">◾</span>'
+    +'<div>'
+    +'<div style="font-size:13px;font-weight:700;color:#38bdf8">Near Pivot (Daily ±5%) — '+stocks.length+' stocks</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">Within 5% of daily chart pivot high. Sorted by distance from pivot (closest first). Click row to open TradingView daily chart.</div>'
+    +'</div>'
+    +'<button onclick="downloadDPivotCsv()" style="margin-left:auto;padding:6px 16px;background:rgba(56,189,248,.13);border:1px solid rgba(56,189,248,.35);color:#38bdf8;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;white-space:nowrap;display:flex;align-items:center;gap:5px">'
+    +'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+    +' Download CSV</button>';
+  tpBody.insertBefore(banner, tpBody.firstChild);
+
+  _renderDPivotRows(stocks);
+}
+
+function applyDPivotFilter(btn){
+  document.querySelectorAll('#dpivot-filter-bar .highs-chip').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  var f = btn.dataset.filter;
+  var base = _buildDailyPivotData();
+  var filtered = base.filter(function(s){
+    if(f === 'below') return (s.pct_from_pivot||0) < 0;
+    if(f === 'above') return (s.pct_from_pivot||0) >= 0;
+    if(f === 'tt8')   return (s.passed||0) >= 8;
+    if(f === 'rs70')  return (s.rs_rank||0) >= 70;
+    return true;
+  });
+  currentStocks  = base;
+  filteredStocks = filtered;
+  _displayedRows = PAGE_SIZE;
+  _renderDPivotRows(filtered);
+}
+
+function downloadDPivotCsv(){
+  var rows = [['Ticker','RS Rank','Passed','Price','Daily Pivot','% from Pivot','Crossed','Pivot Age (bars)','Vol Ratio']];
+  filteredStocks.forEach(function(s){
+    rows.push([s.ticker, s.rs_rank||'', s.passed||'', s.price||'',
+      s.pivot_high!=null?s.pivot_high.toFixed(2):'',
+      s.pct_from_pivot!=null?s.pct_from_pivot.toFixed(1):'',
+      s.pivot_crossed?'YES':'NO',
+      s.pivot_bars_ago!=null?s.pivot_bars_ago:'',
+      s.vol_ratio!=null?s.vol_ratio.toFixed(2):'']);
+  });
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'daily_near_pivot.csv';
+  a.click();
+}
+
+function _renderDPivotRows(stocks){
+  var tbl = document.getElementById('stock-table');
+  var cols = ['Ticker','RS','Passed','Price','Daily Pivot','% from Pivot','Status','Age (bars)','Vol×'];
+  var thead = '<thead><tr>'+cols.map(function(c){ return '<th>'+c+'</th>'; }).join('')+'</tr></thead>';
+  var rows = '';
+  var shown = Math.min(stocks.length, _displayedRows || PAGE_SIZE);
+  for(var i=0;i<shown;i++){
+    var s = stocks[i];
+    var pd = s.pct_from_pivot;
+    var crossed = s.pivot_crossed;
+    var pctCol = crossed ? 'var(--green-hi)' : (pd != null && pd >= -2) ? 'var(--amber)' : '#38bdf8';
+    var passedCol = (s.passed||0)>=8 ? 'var(--green-hi)' : (s.passed||0)>=7 ? 'var(--amber)' : 'var(--text2)';
+    var volCol = (s.vol_ratio||0)>=1.5 ? 'var(--green-hi)' : (s.vol_ratio||0)>=1.0 ? 'var(--amber)' : 'var(--text2)';
+    var statusBadge = crossed
+      ? '<span style="background:rgba(63,185,80,.15);color:var(--green-hi);padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">✓ Crossed</span>'
+      : (pd!=null && pd>=-2)
+        ? '<span style="background:rgba(251,191,36,.15);color:var(--amber);padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">⚡ Imminent</span>'
+        : '<span style="background:rgba(56,189,248,.12);color:#38bdf8;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">↑ Approaching</span>';
+    var tvUrl = 'https://www.tradingview.com/chart/?symbol='+(s.tv_symbol||('NSE:'+s.ticker));
+    rows += '<tr onclick="window.open(\''+tvUrl+'\',\'_blank\')" style="cursor:pointer">'
+      +'<td style="font-weight:700;color:var(--text);font-family:\'Fira Code\',monospace">'+s.ticker+'</td>'
+      +'<td><span style="background:rgba(37,99,235,.15);color:#93c5fd;padding:1px 6px;border-radius:10px;font-size:11px;font-family:\'Fira Code\',monospace">'+(s.rs_rank||'—')+'</span></td>'
+      +'<td style="color:'+passedCol+';font-weight:600">'+(s.passed!=null?s.passed+'/8':'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace">&#8377;'+(s.price!=null?num(s.price):'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace;color:var(--text2)">&#8377;'+(s.pivot_high!=null?num(s.pivot_high):'—')+'</td>'
+      +'<td style="color:'+pctCol+';font-weight:600;font-family:\'Fira Code\',monospace">'+(pd!=null?(pd>0?'+':'')+pd.toFixed(1)+'%':'—')+'</td>'
+      +'<td>'+statusBadge+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace;color:var(--text3)">'+(s.pivot_bars_ago!=null?s.pivot_bars_ago+'d':'—')+'</td>'
+      +'<td style="color:'+volCol+';font-family:\'Fira Code\',monospace">'+(s.vol_ratio!=null?s.vol_ratio.toFixed(2)+'×':'—')+'</td>'
+      +'</tr>';
+  }
+  if(shown < stocks.length){
+    rows += '<tr><td colspan="'+cols.length+'" style="text-align:center;padding:14px;color:var(--text2)">'
+      +'<button onclick="_loadMoreDPivot()" style="padding:6px 20px;background:rgba(56,189,248,.12);border:1px solid rgba(56,189,248,.3);color:#38bdf8;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">'
+      +'Load more ('+(stocks.length-shown)+' remaining)</button></td></tr>';
+  }
+  tbl.innerHTML = thead+'<tbody>'+rows+'</tbody>';
+}
+
+function _loadMoreDPivot(){
+  _displayedRows = (_displayedRows||PAGE_SIZE) + PAGE_SIZE;
+  _renderDPivotRows(filteredStocks);
+}
+
+// ── NEAR PIVOT WEEKLY ─────────────────────────────────────────────────────────
+function _buildWeeklyPivotData(){
+  var seen = {};
+  var result = [];
+  Object.keys(D.screens || {}).forEach(function(sk){
+    var scr = D.screens[sk];
+    if(!scr || !scr.stocks) return;
+    scr.stocks.forEach(function(s){
+      if(seen[s.ticker]) return;
+      var pw = s.pct_from_pivot_w;
+      if(pw != null && pw >= -5 && pw <= 5 && s.pivot_high_w != null){
+        seen[s.ticker] = true;
+        result.push(s);
+      }
+    });
+  });
+  // Sort: not-yet-crossed first (approaching pivot), then by closest to 0
+  result.sort(function(a,b){
+    var da = Math.abs(a.pct_from_pivot_w || 0);
+    var db = Math.abs(b.pct_from_pivot_w || 0);
+    return da - db;
+  });
+  var el = document.getElementById('cnt-weekly_near_pivot');
+  if(el) el.textContent = result.length;
+  return result;
+}
+
+function renderWeeklyPivotTable(stocks){
+  var tbl = document.getElementById('stock-table');
+  tbl.style.display = '';
+
+  ['wpivot-banner','wpivot-filter-bar'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.remove();
+  });
+
+  var tpBody = document.querySelector('.tp-body');
+
+  // ── Filter bar ─────────────────────────────────────────────────────────────
+  var filterBar = document.createElement('div');
+  filterBar.id = 'wpivot-filter-bar';
+  filterBar.style.cssText = 'padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+  var chipDefs = [
+    {k:'all',      l:'All (±5%)'},
+    {k:'below',    l:'Approaching (below pivot)'},
+    {k:'above',    l:'Just Above (0%–5%)'},
+    {k:'tt8',      l:'Full Template (8/8)'},
+    {k:'rs70',     l:'RS ≥ 70'},
+  ];
+  var chipsHtml = chipDefs.map(function(c){
+    return '<button class="highs-chip'+(c.k==='all'?' active':'')+'" data-filter="'+c.k+'" onclick="applyWPivotFilter(this)">'
+      +c.l+'</button>';
+  }).join('');
+  filterBar.innerHTML = '<span style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.1px;flex-shrink:0">Filter:</span>'+chipsHtml;
+  tpBody.insertBefore(filterBar, tpBody.firstChild);
+
+  // ── Banner ─────────────────────────────────────────────────────────────────
+  var banner = document.createElement('div');
+  banner.id = 'wpivot-banner';
+  banner.style.cssText = 'padding:10px 20px;background:rgba(251,113,133,.06);border-bottom:2px solid rgba(251,113,133,.3);flex-shrink:0;display:flex;align-items:center;gap:12px';
+  banner.innerHTML = '<span style="font-size:22px">🎯</span>'
+    +'<div>'
+    +'<div style="font-size:13px;font-weight:700;color:#fb7185">Near Pivot (Weekly ±5%) — '+stocks.length+' stocks</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">Within 5% of weekly chart pivot high. Sorted by distance from pivot (closest first). Click row to open TradingView chart.</div>'
+    +'</div>'
+    +'<button onclick="downloadWPivotCsv()" style="margin-left:auto;padding:6px 16px;background:rgba(251,113,133,.13);border:1px solid rgba(251,113,133,.35);color:#fb7185;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;white-space:nowrap;display:flex;align-items:center;gap:5px">'
+    +'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+    +' Download CSV</button>';
+  tpBody.insertBefore(banner, tpBody.firstChild);
+
+  _renderWPivotRows(stocks);
+}
+
+function applyWPivotFilter(btn){
+  document.querySelectorAll('#wpivot-filter-bar .highs-chip').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  var f = btn.dataset.filter;
+  var base = _buildWeeklyPivotData();
+  var filtered = base.filter(function(s){
+    if(f === 'below')  return (s.pct_from_pivot_w||0) < 0;
+    if(f === 'above')  return (s.pct_from_pivot_w||0) >= 0;
+    if(f === 'tt8')    return (s.passed||0) >= 8;
+    if(f === 'rs70')   return (s.rs_rank||0) >= 70;
+    return true;
+  });
+  currentStocks  = base;
+  filteredStocks = filtered;
+  _displayedRows = PAGE_SIZE;
+  _renderWPivotRows(filtered);
+}
+
+function downloadWPivotCsv(){
+  var rows = [['Ticker','RS Rank','Passed','Price','Weekly Pivot','% from Pivot','Crossed','Vol Ratio']];
+  filteredStocks.forEach(function(s){
+    rows.push([s.ticker, s.rs_rank||'', s.passed||'', s.price||'',
+      s.pivot_high_w!=null?s.pivot_high_w.toFixed(2):'',
+      s.pct_from_pivot_w!=null?s.pct_from_pivot_w.toFixed(1):'',
+      s.pivot_crossed_w?'YES':'NO',
+      s.vol_ratio!=null?s.vol_ratio.toFixed(2):'']);
+  });
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'weekly_near_pivot.csv';
+  a.click();
+}
+
+function _renderWPivotRows(stocks){
+  var tbl = document.getElementById('stock-table');
+  var cols = ['Ticker','RS','Passed','Price','Weekly Pivot','% from Pivot','Status','Vol×'];
+  var thead = '<thead><tr>'+cols.map(function(c){ return '<th>'+c+'</th>'; }).join('')+'</tr></thead>';
+  var rows = '';
+  var shown = Math.min(stocks.length, _displayedRows || PAGE_SIZE);
+  for(var i=0;i<shown;i++){
+    var s = stocks[i];
+    var pw = s.pct_from_pivot_w;
+    var crossed = s.pivot_crossed_w;
+    var pctCol = crossed ? 'var(--green-hi)' : (pw != null && pw >= -2) ? 'var(--amber)' : 'var(--text2)';
+    var passedCol = (s.passed||0)>=8 ? 'var(--green-hi)' : (s.passed||0)>=7 ? 'var(--amber)' : 'var(--text2)';
+    var volCol = (s.vol_ratio||0)>=1.5 ? 'var(--green-hi)' : (s.vol_ratio||0)>=1.0 ? 'var(--amber)' : 'var(--text2)';
+    var statusBadge = crossed
+      ? '<span style="background:rgba(63,185,80,.15);color:var(--green-hi);padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">✓ Crossed</span>'
+      : (pw!=null && pw>=-2)
+        ? '<span style="background:rgba(251,191,36,.15);color:var(--amber);padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">⚡ Imminent</span>'
+        : '<span style="background:rgba(251,113,133,.12);color:#fb7185;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700">↑ Approaching</span>';
+    var tvUrl = 'https://www.tradingview.com/chart/?symbol='+(s.tv_symbol||('NSE:'+s.ticker))+'&interval=W';
+    rows += '<tr onclick="window.open(\''+tvUrl+'\',\'_blank\')" style="cursor:pointer">'
+      +'<td style="font-weight:700;color:var(--text);font-family:\'Fira Code\',monospace">'+s.ticker+'</td>'
+      +'<td><span style="background:rgba(37,99,235,.15);color:#93c5fd;padding:1px 6px;border-radius:10px;font-size:11px;font-family:\'Fira Code\',monospace">'+(s.rs_rank||'—')+'</span></td>'
+      +'<td style="color:'+passedCol+';font-weight:600">'+(s.passed!=null?s.passed+'/8':'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace">&#8377;'+(s.price!=null?num(s.price):'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace;color:var(--text2)">&#8377;'+(s.pivot_high_w!=null?num(s.pivot_high_w):'—')+'</td>'
+      +'<td style="color:'+pctCol+';font-weight:600;font-family:\'Fira Code\',monospace">'+(pw!=null?(pw>0?'+':'')+pw.toFixed(1)+'%':'—')+'</td>'
+      +'<td>'+statusBadge+'</td>'
+      +'<td style="color:'+volCol+';font-family:\'Fira Code\',monospace">'+(s.vol_ratio!=null?s.vol_ratio.toFixed(2)+'×':'—')+'</td>'
+      +'</tr>';
+  }
+  if(shown < stocks.length){
+    rows += '<tr><td colspan="'+cols.length+'" style="text-align:center;padding:14px;color:var(--text2)">'
+      +'<button onclick="_loadMoreWPivot()" style="padding:6px 20px;background:rgba(251,113,133,.12);border:1px solid rgba(251,113,133,.3);color:#fb7185;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">'
+      +'Load more ('+(stocks.length-shown)+' remaining)</button></td></tr>';
+  }
+  tbl.innerHTML = thead+'<tbody>'+rows+'</tbody>';
+}
+
+function _loadMoreWPivot(){
+  _displayedRows = (_displayedRows||PAGE_SIZE) + PAGE_SIZE;
+  _renderWPivotRows(filteredStocks);
+}
+
+// ── Near Weekly Base Pivot renderer (US Minervini) ───────────────────────────
+function renderBasePivotTable(stocks){
+  var tbl = document.getElementById('stock-table');
+  tbl.style.display = '';
+  ['nbp-banner','nbp-filter-bar'].forEach(function(id){ var el=document.getElementById(id); if(el) el.remove(); });
+
+  var tpBody = document.querySelector('.tp-body');
+
+  // Filter bar
+  var filterBar = document.createElement('div');
+  filterBar.id = 'nbp-filter-bar';
+  filterBar.style.cssText = 'padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+  var chips = [
+    {k:'all',    l:'All'},
+    {k:'bo',     l:'Breaking Out (above pivot)'},
+    {k:'bz',     l:'Buy Zone (within 5% below)'},
+    {k:'tt8',    l:'Full Template (8/8)'},
+    {k:'rs90',   l:'RS ≥ 90'},
+  ];
+  filterBar.innerHTML = '<span style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.1px;flex-shrink:0">Filter:</span>'
+    + chips.map(function(c){
+        return '<button class="highs-chip'+(c.k==='all'?' active':'')+'" data-filter="'+c.k+'" onclick="applyNBPFilter(this)">'+c.l+'</button>';
+      }).join('');
+  tpBody.insertBefore(filterBar, tpBody.firstChild);
+
+  // Banner
+  var banner = document.createElement('div');
+  banner.id = 'nbp-banner';
+  banner.style.cssText = 'padding:10px 20px;background:rgba(251,191,36,.06);border-bottom:2px solid rgba(251,191,36,.3);flex-shrink:0;display:flex;align-items:center;gap:12px';
+  var bo = stocks.filter(function(s){ return (s.pct_from_base_pivot||0)>=0; }).length;
+  var bz = stocks.length - bo;
+  banner.innerHTML = '<span style="font-size:22px">🏆</span>'
+    +'<div>'
+    +'<div style="font-size:13px;font-weight:700;color:#fbbf24">Near Weekly Base Pivot — '+stocks.length+' US stocks</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'
+    +'<span style="color:var(--green)">'+bo+' breaking out</span> &nbsp;|&nbsp; '
+    +'<span style="color:#fb7185">'+bz+' in buy zone</span> — Minervini consolidation base high. Click row → TradingView weekly chart.</div>'
+    +'</div>'
+    +'<button onclick="downloadNBPCsv()" style="margin-left:auto;padding:6px 16px;background:rgba(251,191,36,.13);border:1px solid rgba(251,191,36,.35);color:#fbbf24;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;white-space:nowrap">⬇ CSV</button>';
+  tpBody.insertBefore(banner, tpBody.firstChild);
+
+  _renderNBPRows(stocks);
+}
+
+function applyNBPFilter(btn){
+  document.querySelectorAll('#nbp-filter-bar .highs-chip').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  var f = btn.dataset.filter;
+  var base = (D.screens['near_base_pivot'] ? D.screens['near_base_pivot'].stocks : []).slice();
+  base.sort(function(a,b){ return (b.pct_from_base_pivot||0)-(a.pct_from_base_pivot||0); });
+  filteredStocks = base.filter(function(s){
+    if(f==='bo')  return (s.pct_from_base_pivot||0) >= 0;
+    if(f==='bz')  return (s.pct_from_base_pivot||0) < 0;
+    if(f==='tt8') return (s.passed||0) >= 8;
+    if(f==='rs90') return (s.rs_rank||0) >= 90;
+    return true;
+  });
+  currentStocks  = base;
+  _displayedRows = PAGE_SIZE;
+  _renderNBPRows(filteredStocks);
+}
+
+function downloadNBPCsv(){
+  var rows = [['Ticker','Price','RS','Passed','Base Pivot','% from Pivot','Base Wks','Base Depth%','Status','Vol×']];
+  filteredStocks.forEach(function(s){
+    rows.push([s.ticker, s.price||'', s.rs_rank||'', s.passed||'',
+      s.base_pivot!=null?s.base_pivot:'',
+      s.pct_from_base_pivot!=null?s.pct_from_base_pivot:'',
+      s.base_wks||'', s.base_depth_pct||'',
+      s.base_status||'', s.vol_ratio!=null?s.vol_ratio.toFixed(2):'']);
+  });
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var a = document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='us_near_base_pivot.csv'; a.click();
+}
+
+function _renderNBPRows(stocks){
+  var tbl = document.getElementById('stock-table');
+  var cols = ['Ticker','RS','Criteria','Price','Base Pivot','% from Pivot','Base Wks','Status','Vol×'];
+  var thead = '<thead><tr>'+cols.map(function(c){ return '<th>'+c+'</th>'; }).join('')+'</tr></thead>';
+  var rows = '';
+  var shown = Math.min(stocks.length, _displayedRows||PAGE_SIZE);
+  for(var i=0;i<shown;i++){
+    var s = stocks[i];
+    var pct = s.pct_from_base_pivot;
+    var isBO = pct != null && pct >= 0;
+    var pctCol = isBO ? 'var(--green-hi)' : (pct!=null && pct>=-2) ? 'var(--amber)' : '#fb7185';
+    var passedCol = (s.passed||0)>=8?'var(--green-hi)':(s.passed||0)>=6?'var(--amber)':'var(--text2)';
+    var volCol = (s.vol_ratio||0)>=1.5?'var(--green-hi)':(s.vol_ratio||0)>=1.0?'var(--amber)':'var(--text2)';
+    var statusBadge = isBO
+      ? '<span style="background:rgba(63,185,80,.15);color:var(--green-hi);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">▲ BREAKING OUT</span>'
+      : (pct!=null && pct>=-2)
+        ? '<span style="background:rgba(251,191,36,.15);color:#fbbf24;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">⚡ IMMINENT</span>'
+        : '<span style="background:rgba(251,113,133,.12);color:#fb7185;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">↑ BUY ZONE</span>';
+    var tvSym = (s.tv_symbol||('NASDAQ:'+s.ticker)).replace('NASDAQ:','').replace('NYSE:','');
+    var tvUrl = 'https://www.tradingview.com/chart/?symbol='+tvSym+'&interval=W';
+    var cur = _currencySymbol;
+    rows += '<tr onclick="window.open(\''+tvUrl+'\',\'_blank\')" style="cursor:pointer">'
+      +'<td style="font-weight:700;color:var(--text);font-family:\'Fira Code\',monospace">'+s.ticker+'</td>'
+      +'<td><span style="background:rgba(37,99,235,.15);color:#93c5fd;padding:1px 6px;border-radius:10px;font-size:11px;font-family:\'Fira Code\',monospace">'+(s.rs_rank||'—')+'</span></td>'
+      +'<td style="color:'+passedCol+';font-weight:600">'+(s.passed!=null?s.passed+'/8':'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace">'+cur+(s.price!=null?num(s.price):'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace;color:var(--text2)">'+cur+(s.base_pivot!=null?num(s.base_pivot):'—')+'</td>'
+      +'<td style="color:'+pctCol+';font-weight:700;font-family:\'Fira Code\',monospace">'+(pct!=null?(pct>0?'+':'')+pct.toFixed(1)+'%':'—')+'</td>'
+      +'<td style="color:var(--text2);font-size:11px">'+(s.base_wks!=null?s.base_wks+'w':'—')+'</td>'
+      +'<td>'+statusBadge+'</td>'
+      +'<td style="color:'+volCol+';font-family:\'Fira Code\',monospace">'+(s.vol_ratio!=null?s.vol_ratio.toFixed(2)+'×':'—')+'</td>'
+      +'</tr>';
+  }
+  if(shown < stocks.length){
+    rows += '<tr><td colspan="'+cols.length+'" style="text-align:center;padding:14px;color:var(--text2)">'
+      +'<button onclick="_loadMoreNBP()" style="padding:6px 20px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3);color:#fbbf24;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">'
+      +'Load more ('+(stocks.length-shown)+' remaining)</button></td></tr>';
+  }
+  tbl.innerHTML = thead+'<tbody>'+rows+'</tbody>';
+}
+
+function _loadMoreNBP(){
+  _displayedRows = (_displayedRows||PAGE_SIZE)+PAGE_SIZE;
+  _renderNBPRows(filteredStocks);
+}
+
+// ── AI Theme Near Pivot renderer ─────────────────────────────────────────────
+var _AI_THEMES = {
+  'NVDA':'Pure AI','AMD':'AI Chips','PLTR':'AI Software','AI':'AI Software','SOUN':'AI Voice',
+  'SMCI':'AI Servers','BBAI':'AI Analytics',
+  'AVGO':'AI Semis','AMAT':'Semi Equip','LRCX':'Semi Equip','KLAC':'Semi Equip',
+  'ASML':'Semi Equip (EUV)','MU':'AI Memory (HBM)','MTSI':'RF/Mixed-Signal',
+  'ONTO':'Wafer Inspection','FORM':'Semi Test','COHU':'Chip Test','ACLS':'Ion Implant',
+  'AEHR':'SiC/GaN Test','MPWR':'AI Power','MRVL':'AI Networking','ADI':'Analog/Mixed',
+  'TXN':'Analog','QCOM':'AI Wireless','INTC':'AI CPUs','SNDK':'Flash Storage',
+  'STX':'AI Storage','WDC':'Flash/HDD',
+  'MSFT':'AI Cloud (Azure)','GOOGL':'AI Cloud (GCP)','GOOG':'AI Cloud (GCP)',
+  'META':'AI Social','AMZN':'AI Cloud (AWS)','ORCL':'AI DB/Cloud','CRM':'AI CRM',
+  'NOW':'AI IT Ops','SNOW':'AI Data Platform','MDB':'AI Database',
+  'DDOG':'AI Observability','NET':'AI Edge/CDN','ZS':'AI Security',
+  'PANW':'AI Security','CRWD':'AI Security','FTNT':'AI Security',
+  'ADBE':'AI Creative','ANSS':'AI Simulation','CDNS':'AI EDA','SNPS':'AI EDA',
+  'KEYS':'AI Test & Meas','DELL':'AI Servers','HPE':'AI Servers','NTAP':'AI Storage Infra',
+  'PSTG':'AI Flash Storage',
+  'GEV':'AI Data Center Power','NEE':'AI Clean Power','VST':'AI Power',
+  'CEG':'AI Nuclear Power','ETN':'AI Power Mgmt','EQIX':'AI Data Centers',
+  'DLR':'AI Data Centers','AMT':'AI Towers','CCI':'AI Towers','SBAC':'AI Towers',
+  'ROK':'AI Automation','ISRG':'AI Robotics','AXON':'AI Defense','HON':'AI Industrial',
+  'RXRX':'AI Drug Discovery','EXAS':'AI Diagnostics','ILMN':'AI Genomics','TECH':'AI Biotech',
+  'CSCO':'AI Networking','ANET':'AI Networking','JNPR':'AI Networking','LITE':'AI Photonics',
+};
+
+function renderAiPivotTable(stocks){
+  var tbl = document.getElementById('stock-table');
+  tbl.style.display = '';
+  ['aipiv-banner','aipiv-filter-bar'].forEach(function(id){ var el=document.getElementById(id); if(el) el.remove(); });
+
+  var tpBody = document.querySelector('.tp-body');
+
+  // Filter bar
+  var filterBar = document.createElement('div');
+  filterBar.id = 'aipiv-filter-bar';
+  filterBar.style.cssText = 'padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+  var chips = [
+    {k:'all',  l:'All AI'},
+    {k:'bo',   l:'Breaking Out'},
+    {k:'bz',   l:'Buy Zone'},
+    {k:'semi', l:'Semiconductors'},
+    {k:'cloud',l:'Cloud / Software'},
+    {k:'infra',l:'Infra / Power'},
+    {k:'rs90', l:'RS ≥ 90'},
+  ];
+  filterBar.innerHTML = '<span style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.1px;flex-shrink:0">Filter:</span>'
+    + chips.map(function(c){
+        return '<button class="highs-chip'+(c.k==='all'?' active':'')+'" data-filter="'+c.k+'" onclick="applyAIPivFilter(this)">'+c.l+'</button>';
+      }).join('');
+  tpBody.insertBefore(filterBar, tpBody.firstChild);
+
+  // Banner
+  var banner = document.createElement('div');
+  banner.id = 'aipiv-banner';
+  banner.style.cssText = 'padding:10px 20px;background:rgba(139,92,246,.07);border-bottom:2px solid rgba(139,92,246,.35);flex-shrink:0;display:flex;align-items:center;gap:12px';
+  var bo = stocks.filter(function(s){ return (s.pct_from_base_pivot||0)>=0; }).length;
+  var bz = stocks.length - bo;
+  banner.innerHTML = '<span style="font-size:22px">🤖</span>'
+    +'<div>'
+    +'<div style="font-size:13px;font-weight:700;color:#a78bfa">AI Theme — Near Weekly Base Pivot — '+stocks.length+' stocks</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'
+    +'<span style="color:var(--green)">'+bo+' breaking out</span> &nbsp;|&nbsp; '
+    +'<span style="color:#fb7185">'+bz+' in buy zone</span> — AI semiconductors, cloud, data centers, power. Click row → TradingView weekly chart.</div>'
+    +'</div>'
+    +'<button onclick="downloadAIPivCsv()" style="margin-left:auto;padding:6px 16px;background:rgba(139,92,246,.13);border:1px solid rgba(139,92,246,.35);color:#a78bfa;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;white-space:nowrap">⬇ CSV</button>';
+  tpBody.insertBefore(banner, tpBody.firstChild);
+
+  _renderAIPivRows(stocks);
+}
+
+var _aiSemiKeys  = ['AI Chips','AI Memory (HBM)','AI Semis','Semi Equip','Semi Equip (EUV)','RF/Mixed-Signal','Wafer Inspection','Semi Test','Chip Test','Ion Implant','SiC/GaN Test','AI Power','AI Networking','Analog/Mixed','Analog','AI Wireless','AI CPUs','Flash Storage','AI Storage','Flash/HDD','AI Photonics'];
+var _aiCloudKeys = ['Pure AI','AI Software','AI Voice','AI CRM','AI IT Ops','AI Data Platform','AI Database','AI Observability','AI Edge/CDN','AI Security','AI Creative','AI Simulation','AI EDA','AI Test & Meas','AI Servers','AI Flash Storage','AI Storage Infra','AI Analytics'];
+var _aiInfraKeys = ['AI Data Center Power','AI Clean Power','AI Power','AI Nuclear Power','AI Power Mgmt','AI Data Centers','AI Towers','AI Automation','AI Robotics','AI Defense','AI Industrial','AI Drug Discovery','AI Diagnostics','AI Genomics','AI Biotech','AI Cloud (Azure)','AI Cloud (GCP)','AI Cloud (AWS)','AI Social'];
+
+function applyAIPivFilter(btn){
+  document.querySelectorAll('#aipiv-filter-bar .highs-chip').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  var f = btn.dataset.filter;
+  var base = (D.screens['ai_near_pivot'] ? D.screens['ai_near_pivot'].stocks : []).slice();
+  base.sort(function(a,b){ return (b.pct_from_base_pivot||0)-(a.pct_from_base_pivot||0); });
+  filteredStocks = base.filter(function(s){
+    var theme = _AI_THEMES[s.ticker] || '';
+    if(f==='bo')    return (s.pct_from_base_pivot||0) >= 0;
+    if(f==='bz')    return (s.pct_from_base_pivot||0) < 0;
+    if(f==='semi')  return _aiSemiKeys.indexOf(theme) >= 0;
+    if(f==='cloud') return _aiCloudKeys.indexOf(theme) >= 0;
+    if(f==='infra') return _aiInfraKeys.indexOf(theme) >= 0;
+    if(f==='rs90')  return (s.rs_rank||0) >= 90;
+    return true;
+  });
+  currentStocks  = base;
+  _displayedRows = PAGE_SIZE;
+  _renderAIPivRows(filteredStocks);
+}
+
+function downloadAIPivCsv(){
+  var rows = [['Ticker','AI Theme','Price','RS','Passed','Base Pivot','% from Pivot','Base Wks','Status']];
+  filteredStocks.forEach(function(s){
+    rows.push([s.ticker, _AI_THEMES[s.ticker]||'', s.price||'', s.rs_rank||'', s.passed||'',
+      s.base_pivot!=null?s.base_pivot:'', s.pct_from_base_pivot!=null?s.pct_from_base_pivot:'',
+      s.base_wks||'', s.base_status||'']);
+  });
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var a = document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='ai_near_base_pivot.csv'; a.click();
+}
+
+function _renderAIPivRows(stocks){
+  var tbl = document.getElementById('stock-table');
+  var cols = ['Ticker','AI Theme','RS','Criteria','Price','Base Pivot','% from Pivot','Status'];
+  var thead = '<thead><tr>'+cols.map(function(c){ return '<th>'+c+'</th>'; }).join('')+'</tr></thead>';
+  var rows = '';
+  var shown = Math.min(stocks.length, _displayedRows||PAGE_SIZE);
+  for(var i=0;i<shown;i++){
+    var s = stocks[i];
+    var pct = s.pct_from_base_pivot;
+    var isBO = pct != null && pct >= 0;
+    var pctCol = isBO ? 'var(--green-hi)' : (pct!=null && pct>=-2) ? 'var(--amber)' : '#fb7185';
+    var passedCol = (s.passed||0)>=8?'var(--green-hi)':(s.passed||0)>=6?'var(--amber)':'var(--text2)';
+    var theme = _AI_THEMES[s.ticker] || 'AI';
+    var themeColor = (_aiSemiKeys.indexOf(theme)>=0) ? '#93c5fd'
+                   : (_aiCloudKeys.indexOf(theme)>=0) ? '#86efac'
+                   : '#d8b4fe';
+    var statusBadge = isBO
+      ? '<span style="background:rgba(63,185,80,.15);color:var(--green-hi);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">▲ BREAKING OUT</span>'
+      : (pct!=null && pct>=-2)
+        ? '<span style="background:rgba(251,191,36,.15);color:#fbbf24;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">⚡ IMMINENT</span>'
+        : '<span style="background:rgba(251,113,133,.12);color:#fb7185;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">↑ BUY ZONE</span>';
+    var tvSym = (s.tv_symbol||('NASDAQ:'+s.ticker)).replace('NASDAQ:','').replace('NYSE:','');
+    var tvUrl = 'https://www.tradingview.com/chart/?symbol='+tvSym+'&interval=W';
+    var cur = _currencySymbol;
+    rows += '<tr onclick="window.open(\''+tvUrl+'\',\'_blank\')" style="cursor:pointer">'
+      +'<td style="font-weight:700;color:#a78bfa;font-family:\'Fira Code\',monospace">'+s.ticker+'</td>'
+      +'<td><span style="color:'+themeColor+';font-size:10px;font-weight:600">'+theme+'</span></td>'
+      +'<td><span style="background:rgba(37,99,235,.15);color:#93c5fd;padding:1px 6px;border-radius:10px;font-size:11px;font-family:\'Fira Code\',monospace">'+(s.rs_rank||'—')+'</span></td>'
+      +'<td style="color:'+passedCol+';font-weight:600">'+(s.passed!=null?s.passed+'/8':'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace">'+cur+(s.price!=null?num(s.price):'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace;color:var(--text2)">'+cur+(s.base_pivot!=null?num(s.base_pivot):'—')+'</td>'
+      +'<td style="color:'+pctCol+';font-weight:700;font-family:\'Fira Code\',monospace">'+(pct!=null?(pct>0?'+':'')+pct.toFixed(1)+'%':'—')+'</td>'
+      +'<td>'+statusBadge+'</td>'
+      +'</tr>';
+  }
+  if(shown < stocks.length){
+    rows += '<tr><td colspan="'+cols.length+'" style="text-align:center;padding:14px">'
+      +'<button onclick="_loadMoreAIPiv()" style="padding:6px 20px;background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.3);color:#a78bfa;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">'
+      +'Load more ('+(stocks.length-shown)+' remaining)</button></td></tr>';
+  }
+  tbl.innerHTML = thead+'<tbody>'+rows+'</tbody>';
+}
+
+function _loadMoreAIPiv(){
+  _displayedRows = (_displayedRows||PAGE_SIZE)+PAGE_SIZE;
+  _renderAIPivRows(filteredStocks);
+}
+
+// ── Near High & 20MA renderer ─────────────────────────────────────────────────
+function renderHighMA20Table(stocks){
+  var tbl = document.getElementById('stock-table');
+  tbl.style.display = '';
+
+  // remove any previous banner/filter bar
+  ['hm20-banner','hm20-filter-bar'].forEach(function(id){ var el=document.getElementById(id); if(el) el.remove(); });
+
+  var tpBody = document.querySelector('.tp-body');
+
+  // Filter chips
+  var filterBar = document.createElement('div');
+  filterBar.id = 'hm20-filter-bar';
+  filterBar.style.cssText = 'padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+  var chips = [
+    {k:'all',  l:'All'},
+    {k:'ath',  l:'Near ATH'},
+    {k:'h52',  l:'Near 52W High'},
+    {k:'on20', l:'On 20MA'},
+    {k:'ft',   l:'Full Template'},
+    {k:'rs85', l:'RS ≥ 85'},
+  ];
+  filterBar.innerHTML = '<span style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.1px;flex-shrink:0">Filter:</span>'
+    + chips.map(function(c){
+        return '<button class="highs-chip'+(c.k==='all'?' active':'')+'" data-filter="'+c.k+'" onclick="applyHM20Filter(this)">'+c.l+'</button>';
+      }).join('')
+    + '<button onclick="downloadHM20Csv()" style="margin-left:auto;padding:4px 14px;background:rgba(251,146,60,.12);border:1px solid rgba(251,146,60,.3);color:#fb923c;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;white-space:nowrap">⬇ CSV</button>';
+  tpBody.insertBefore(filterBar, tpBody.firstChild);
+
+  // Banner
+  var banner = document.createElement('div');
+  banner.id = 'hm20-banner';
+  banner.style.cssText = 'padding:10px 20px;background:rgba(251,146,60,.06);border-bottom:2px solid rgba(251,146,60,.3);flex-shrink:0;display:flex;align-items:center;gap:12px';
+  var athCnt  = stocks.filter(function(s){ return s.near_ath; }).length;
+  var h52Cnt  = stocks.filter(function(s){ return !s.near_ath; }).length;
+  var on20Cnt = stocks.filter(function(s){ return s.pct_from_ma20 != null && Math.abs(s.pct_from_ma20) <= 1.5; }).length;
+  banner.innerHTML = '<span style="font-size:22px">🎯</span>'
+    +'<div>'
+    +'<div style="font-size:13px;font-weight:700;color:#fb923c">Near High &amp; 20MA — '+stocks.length+' stocks</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'
+    +'<span style="color:#fbbf24">'+athCnt+' near ATH</span> &nbsp;|&nbsp; '
+    +'<span style="color:var(--green)">'+h52Cnt+' near 52W high</span> &nbsp;|&nbsp; '
+    +'<span style="color:#fb923c">'+on20Cnt+' hugging 20MA (±1.5%)</span>'
+    +'&nbsp;— Sorted by closeness to MA20. Click row → TradingView daily chart.</div>'
+    +'</div>';
+  tpBody.insertBefore(banner, tpBody.firstChild);
+
+  _renderHM20Rows(stocks);
+}
+
+function applyHM20Filter(btn){
+  document.querySelectorAll('#hm20-filter-bar .highs-chip').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  var f = btn.dataset.filter;
+  var base = (D.screens['high_ma20'] ? D.screens['high_ma20'].stocks.slice() : []);
+  base.sort(function(a,b){ return Math.abs(a.pct_from_ma20||99) - Math.abs(b.pct_from_ma20||99); });
+  filteredStocks = base.filter(function(s){
+    if(f==='ath')  return s.near_ath;
+    if(f==='h52')  return !s.near_ath;
+    if(f==='on20') return s.pct_from_ma20 != null && Math.abs(s.pct_from_ma20) <= 1.5;
+    if(f==='ft')   return s.passed === 8;
+    if(f==='rs85') return (s.rs_rank||0) >= 85;
+    return true;
+  });
+  currentStocks  = base;
+  _displayedRows = PAGE_SIZE;
+  _renderHM20Rows(filteredStocks);
+}
+
+function downloadHM20Csv(){
+  var cur = _currencySymbol || '₹';
+  var rows = [['Ticker','RS','Criteria','Price','20MA','% from 20MA','52W High','% from 52W High','ATH','% from ATH','Near ATH']];
+  filteredStocks.forEach(function(s){
+    rows.push([
+      s.ticker, s.rs_rank||'', (s.passed||'')+(s.passed!=null?'/8':''),
+      s.price||'', s.ma20||'', s.pct_from_ma20!=null?s.pct_from_ma20.toFixed(1)+'%':'',
+      s.hi52||'', s.pct_from_high!=null?s.pct_from_high.toFixed(1)+'%':'',
+      s.ath||'', s.pct_from_ath!=null?s.pct_from_ath.toFixed(1)+'%':'',
+      s.near_ath?'Yes':'No'
+    ]);
+  });
+  var csv = rows.map(function(r){ return r.join(','); }).join('\n');
+  var a = document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='near_high_ma20.csv'; a.click();
+}
+
+function _renderHM20Rows(stocks){
+  var tbl = document.getElementById('stock-table');
+  var cur = _currencySymbol || '₹';
+  var cols = ['Ticker','RS','Criteria','Price','20MA','% from 20MA','52W High / ATH','% from High','Status'];
+  var thead = '<thead><tr>'+cols.map(function(c){ return '<th>'+c+'</th>'; }).join('')+'</tr></thead>';
+  var rows = '';
+  var shown = Math.min(stocks.length, _displayedRows || PAGE_SIZE);
+  for(var i=0; i<shown; i++){
+    var s = stocks[i];
+    var p20  = s.pct_from_ma20;
+    var pHi  = s.pct_from_high;
+    var pAth = s.pct_from_ath;
+    var isOn = p20 != null && Math.abs(p20) <= 1.5;
+    var p20Col = isOn ? '#fb923c' : (p20 != null && p20 >= 0 ? 'var(--green)' : 'var(--amber)');
+    var passedCol = (s.passed||0)>=8?'var(--green-hi)':(s.passed||0)>=6?'var(--amber)':'var(--text2)';
+    var highLabel = s.near_ath
+      ? '<span style="background:rgba(251,191,36,.15);color:#fbbf24;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700">ATH</span>'
+      : '<span style="background:rgba(37,99,235,.12);color:#93c5fd;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700">52W</span>';
+    var highVal  = s.near_ath ? (s.ath  != null ? cur+num(s.ath)  : '—') : (s.hi52 != null ? cur+num(s.hi52) : '—');
+    var highPct  = s.near_ath ? (pAth   != null ? (pAth >= 0 ? '+' : '')+pAth.toFixed(1)+'%' : '—')
+                              : (pHi    != null ? (pHi  >= 0 ? '+' : '')+pHi.toFixed(1)+'%'  : '—');
+    var highPctCol = (s.near_ath ? pAth : pHi) != null && (s.near_ath ? pAth : pHi) >= -2 ? 'var(--green-hi)' : 'var(--amber)';
+    var badge = isOn
+      ? '<span style="background:rgba(251,146,60,.2);color:#fb923c;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">⚡ ON 20MA</span>'
+      : (p20 != null && p20 >= 0 && p20 <= 5)
+        ? '<span style="background:rgba(63,185,80,.12);color:var(--green-hi);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">↑ ABOVE 20MA</span>'
+        : '<span style="background:rgba(251,191,36,.12);color:#fbbf24;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">↓ APPROACHING</span>';
+    var tvUrl = 'https://www.tradingview.com/chart/?symbol='+(s.tv_symbol||'NSE:'+s.ticker)+'&interval=D';
+    rows += '<tr onclick="window.open(\''+tvUrl+'\',\'_blank\')" style="cursor:pointer">'
+      +'<td style="font-weight:700;color:#fb923c;font-family:\'Fira Code\',monospace">'+s.ticker+'</td>'
+      +'<td><span style="background:rgba(37,99,235,.15);color:#93c5fd;padding:1px 6px;border-radius:10px;font-size:11px;font-family:\'Fira Code\',monospace">'+(s.rs_rank||'—')+'</span></td>'
+      +'<td style="color:'+passedCol+';font-weight:600">'+(s.passed!=null?s.passed+'/8':'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace">'+cur+(s.price!=null?num(s.price):'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace;color:var(--text2)">'+cur+(s.ma20!=null?num(s.ma20):'—')+'</td>'
+      +'<td style="color:'+p20Col+';font-weight:700;font-family:\'Fira Code\',monospace">'+(p20!=null?(p20>=0?'+':'')+p20.toFixed(1)+'%':'—')+'</td>'
+      +'<td style="font-family:\'Fira Code\',monospace">'+highLabel+' '+highVal+'</td>'
+      +'<td style="color:'+highPctCol+';font-weight:600;font-family:\'Fira Code\',monospace">'+highPct+'</td>'
+      +'<td>'+badge+'</td>'
+      +'</tr>';
+  }
+  if(shown < stocks.length){
+    rows += '<tr><td colspan="'+cols.length+'" style="text-align:center;padding:14px">'
+      +'<button onclick="_loadMoreHM20()" style="padding:6px 20px;background:rgba(251,146,60,.12);border:1px solid rgba(251,146,60,.3);color:#fb923c;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">'
+      +'Load more ('+(stocks.length-shown)+' remaining)</button></td></tr>';
+  }
+  tbl.innerHTML = thead+'<tbody>'+rows+'</tbody>';
+}
+
+function _loadMoreHM20(){
+  _displayedRows = (_displayedRows||PAGE_SIZE)+PAGE_SIZE;
+  _renderHM20Rows(filteredStocks);
+}
+
+function renderHighsTable(stocks, type){
+  var isAth = type === 'ath_highs';
+  var tbl = document.getElementById('stock-table');
+  tbl.style.display = '';
+
+  // Remove previous banner / filter bar if any
+  ['highs-banner','highs-filter-bar'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.remove();
+  });
+
+  var tpBody = document.querySelector('.tp-body');
+
+  // ── Filter chips bar ──────────────────────────────────────────────────────
+  var filterBar = document.createElement('div');
+  filterBar.id = 'highs-filter-bar';
+  filterBar.style.cssText = 'padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap';
+  var chipDefs = [
+    {k:'all',l:'All'},
+    {k:'tt8',l:'Full Template (8/8)'},
+    {k:'rs80',l:'RS ≥ 80'},
+    {k:'vcp',l:'VCP Setup'},
+    {k:'vol',l:'Volume Surge 1.5×+'},
+  ];
+  if(isAth) chipDefs.push({k:'ath3',l:'Within 3% ATH'});
+  var chipsHtml = chipDefs.map(function(c){
+    return '<button class="highs-chip'+(c.k==='all'?' active':'')+'" data-filter="'+c.k+'" onclick="applyHighsFilter(this,\''+type+'\')">'
+      +c.l+'</button>';
+  }).join('');
+  filterBar.innerHTML = '<span style="font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:1.1px;flex-shrink:0">Filter:</span>'
+    +chipsHtml;
+  tpBody.insertBefore(filterBar, tpBody.firstChild);
+
+  // ── Banner ────────────────────────────────────────────────────────────────
+  var banner = document.createElement('div');
+  banner.id = 'highs-banner';
+  var accentCol = isAth ? '#fbbf24' : '#34d399';
+  var bgCol     = isAth ? 'rgba(251,191,36,.06)' : 'rgba(52,211,153,.06)';
+  var borderCol = isAth ? 'rgba(251,191,36,.3)'  : 'rgba(52,211,153,.3)';
+  banner.style.cssText = 'padding:10px 20px;background:'+bgCol+';border-bottom:2px solid '+borderCol+';flex-shrink:0;display:flex;align-items:center;gap:12px';
+  banner.innerHTML = '<span style="font-size:22px">'+(isAth?'🏆':'📈')+'</span>'
+    +'<div>'
+    +'<div style="font-size:13px;font-weight:700;color:'+accentCol+'">'
+    +(isAth ? 'All-Time High Leaders — '+stocks.length+' stocks near ATH' : '52-Week New Highs — '+stocks.length+' stocks')
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'
+    +(isAth ? 'Within 5% of all-time high across all screens. pct_from_ath shown where available.' : 'Sorted by RS rank. Use chips to filter by signal quality. Click any row to open chart.')
+    +'</div></div>'
+    +'<button onclick="downloadHighsCsv(\''+type+'\')" style="margin-left:auto;padding:6px 16px;background:rgba(5,150,105,.13);border:1px solid rgba(5,150,105,.35);color:var(--green-hi);border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;font-family:inherit;white-space:nowrap;display:flex;align-items:center;gap:5px">'
+    +'<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+    +' Download CSV</button>';
+  tpBody.insertBefore(banner, tpBody.firstChild);
+
+  _renderHighsRows(stocks, type);
+}
+
+var _activeHighsChip = 'all';  // persists chip state so applyFilter() can reapply it
+
+function _applyHighsChip(f, stocks){
+  return stocks.filter(function(s){
+    if(f==='all')  return true;
+    if(f==='tt8')  return s.passed === 8;
+    if(f==='rs80') return (s.rs_rank||0) >= 80;
+    if(f==='vcp')  return !!s.vcp;
+    if(f==='vol')  return (s.vol_ratio||0) >= 1.5;
+    if(f==='ath3') return s.pct_from_ath != null && s.pct_from_ath >= -3;
+    return true;
+  });
+}
+
+function applyHighsFilter(btn, type){
+  document.querySelectorAll('#highs-filter-bar .highs-chip').forEach(function(c){ c.classList.remove('active'); });
+  btn.classList.add('active');
+  _activeHighsChip = btn.dataset.filter;
+  var filtered = _applyHighsChip(_activeHighsChip, currentStocks);
+  var txt = (document.getElementById('filter-inp').value||'').toLowerCase();
+  if(txt) filtered = filtered.filter(function(s){ return (s.ticker||'').toLowerCase().includes(txt); });
+  filteredStocks = filtered;
+  _displayedRows = PAGE_SIZE;
+  _renderHighsRows(filteredStocks, type);
+}
+
+function _showMoreRow(total){
+  if(_displayedRows >= total) return '';
+  var remaining = total - _displayedRows;
+  return '<tr><td colspan="12" style="text-align:center;padding:14px 0;border:none">'
+    +'<button onclick="_loadMoreHighs()" style="padding:7px 24px;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35);color:#fbbf24;border-radius:7px;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit">'
+    +'Load ' + remaining + ' more ↓</button></td></tr>';
+}
+function _loadMoreHighs(){
+  _displayedRows = (_displayedRows || PAGE_SIZE) + PAGE_SIZE;
+  _renderHighsRows(filteredStocks, currentScreen);
+}
+
+function _renderHighsRows(stocks, type){
+  var isAth = type === 'ath_highs';
+  var tbl = document.getElementById('stock-table');
+  var accentCol = isAth ? '#fbbf24' : '#34d399';
+  var borderL   = isAth ? 'rgba(251,191,36,.45)' : 'rgba(52,211,153,.4)';
+
+  document.getElementById('tp-count').textContent = stocks.length + ' stocks';
+  document.getElementById('empty-state').style.display = stocks.length ? 'none' : 'flex';
+
+  var hdr = '<thead><tr>'
+    +'<th onclick="sortBy(\'ticker\')" style="text-align:left">Symbol</th>'
+    +'<th onclick="sortBy(\'price\')">Price</th>'
+    +'<th onclick="sortBy(\'rs_rank\')">RS</th>'
+    +'<th>TT Score</th>'
+    +(isAth ? '<th onclick="sortBy(\'pct_from_ath\')">% from ATH</th>' : '')
+    +'<th onclick="sortBy(\'pct_from_high\')">% from 52W High</th>'
+    +'<th onclick="sortBy(\'pct_above_low\')">% above 52W Low</th>'
+    +'<th onclick="sortBy(\'vol_ratio\')">Vol Ratio</th>'
+    +'<th onclick="sortBy(\'pct_from_ma50\')">vs MA50</th>'
+    +'<th onclick="sortBy(\'pct_from_ema21\')">vs EMA21</th>'
+    +'<th>Signals</th>'
+    +'<th onclick="sortBy(\'added_date\')">Added</th>'
+    +'</tr></thead>';
+
+  var visible = stocks.slice(0, _displayedRows);
+  var rows = '';
+  visible.forEach(function(s){
+    var rs = s.rs_rank || 0;
+    var rsCls = rs >= 85 ? 'bg' : rs >= 70 ? 'ba' : 'br';
+    var ttBadge = s.passed === 8 ? '<span class="badge bg">8/8</span>'
+                : s.passed >= 6 ? '<span class="badge ba">'+s.passed+'/8</span>'
+                : '<span class="badge br">'+(s.passed||0)+'/8</span>';
+    var pfh = s.pct_from_high;
+    var pfhCol = pfh != null && pfh >= -3 ? 'var(--green)' : pfh >= -10 ? 'var(--amber)' : 'var(--muted)';
+    var pfhTxt = pfh != null ? (pfh >= 0 ? '+' : '')+pfh.toFixed(1)+'%' : '—';
+    var volCol = (s.vol_ratio||0) >= 2.0 ? 'var(--green)' : s.vol_ratio >= 1.5 ? 'var(--green-hi)' : s.vol_ratio >= 1.0 ? 'var(--text2)' : 'var(--muted)';
+    var volFw  = (s.vol_ratio||0) >= 1.5 ? '700' : '400';
+    var athTd = '';
+    if(isAth){
+      var av = s.pct_from_ath;
+      var ac = av==null?'var(--muted)':av>=-1?'var(--green)':av>=-3?'var(--amber)':'var(--text2)';
+      athTd = '<td style="color:'+ac+';font-weight:700">'+(av!=null?av.toFixed(1)+'%':'—')+'</td>';
+    }
+    var sigs = [];
+    if(s.vcp) sigs.push('<span class="badge bp" style="font-size:9px;padding:1px 5px">VCP</span>');
+    if((s.vol_ratio||0)>=1.5) sigs.push('<span class="badge ba" style="font-size:9px;padding:1px 5px">Vol+</span>');
+    if(pfh!=null && pfh>=-0.5) sigs.push('<span class="badge bg" style="font-size:9px;padding:1px 5px">ATH Zone</span>');
+    rows += '<tr class="stock-row" onclick="selectStock(\''+s.ticker+'\')" data-ticker="'+s.ticker+'" style="border-left:3px solid '+borderL+'">'
+      +'<td><b style="color:'+accentCol+'">'+s.ticker+'</b></td>'
+      +'<td>'+_currencySymbol+num(s.price)+'</td>'
+      +'<td><span class="badge '+rsCls+'">'+rs+'</span></td>'
+      +'<td>'+ttBadge+'</td>'
+      +athTd
+      +'<td style="color:'+pfhCol+';font-weight:700">'+pfhTxt+'</td>'
+      +'<td style="color:var(--green)">'+(s.pct_above_low!=null?'+'+s.pct_above_low.toFixed(1)+'%':'—')+'</td>'
+      +'<td style="color:'+volCol+';font-weight:'+volFw+'">'+(s.vol_ratio!=null?s.vol_ratio.toFixed(2)+'×':'—')+'</td>'
+      +_maCell(s.pct_from_ma50)
+      +_maCell(s.pct_from_ema21)
+      +'<td>'+(sigs.join(' ')||'<span style="color:var(--text3)">—</span>')+'</td>'
+      +'<td>'+fmtAdded(s.added_date)+'</td>'
+      +'</tr>';
+  });
+  tbl.innerHTML = hdr+'<tbody id="stock-tbody">'+rows+_showMoreRow(stocks.length)+'</tbody>';
+}
+
+function downloadHighsCsv(type){
+  // Always export ALL stocks in the screen (currentStocks), not just chip-filtered subset,
+  // so the download is always complete regardless of active filter chips.
+  var stocks = currentStocks || [];
+  if(!stocks.length){ alert('No data to download'); return; }
+
+  function _esc(v){
+    var s = String(v == null ? '' : v);
+    if(s.indexOf(',') !== -1 || s.indexOf('"') !== -1 || s.indexOf('\n') !== -1)
+      return '"' + s.replace(/"/g,'""') + '"';
+    return s;
+  }
+  function _row(arr){ return arr.map(_esc).join(','); }
+
+  var isAth = type === 'ath_highs';
+  var hdrs = ['Symbol','Price','RS Rank','TT Score (out of 8)'];
+  if(isAth) hdrs.push('% from ATH');
+  hdrs = hdrs.concat([
+    '% from 52W High','% above 52W Low',
+    'Volume Ratio','vs MA50','vs EMA21',
+    '52W High','52W Low','VCP Setup','Added Date',
+    'C1','C2','C3','C4','C5','C6','C7','C8'
+  ]);
+
+  var rows = [_row(hdrs)];
+  stocks.forEach(function(s){
+    var cr = s.criteria || {};
+    var r = [
+      (s.ticker||'').replace('.NS',''),
+      s.price   != null ? s.price.toFixed(2)   : '',
+      s.rs_rank != null ? s.rs_rank             : '',
+      s.passed  != null ? s.passed+'/8'         : ''
+    ];
+    if(isAth) r.push(s.pct_from_ath != null ? s.pct_from_ath.toFixed(2)+'%' : '');
+    r = r.concat([
+      s.pct_from_high  != null ? s.pct_from_high.toFixed(2)+'%'  : '',
+      s.pct_above_low  != null ? s.pct_above_low.toFixed(2)+'%'  : '',
+      s.vol_ratio      != null ? s.vol_ratio.toFixed(2)+'x'       : '',
+      s.pct_from_ma50  != null ? s.pct_from_ma50.toFixed(2)+'%'  : '',
+      s.pct_from_ema21 != null ? s.pct_from_ema21.toFixed(2)+'%' : '',
+      s.hi52 != null ? s.hi52 : '',
+      s.lo52 != null ? s.lo52 : '',
+      s.vcp ? 'Yes' : 'No',
+      s.added_date || '',
+      cr.c1?'Y':'N', cr.c2?'Y':'N', cr.c3?'Y':'N', cr.c4?'Y':'N',
+      cr.c5?'Y':'N', cr.c6?'Y':'N', cr.c7?'Y':'N', cr.c8?'Y':'N'
+    ]);
+    rows.push(_row(r));
+  });
+
+  var csv = rows.join('\r\n');
+  var blob = new Blob(['﻿' + csv], {type:'text/csv;charset=utf-8;'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url;
+  a.download = (isAth?'ath_highs':'52w_new_highs')+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ── RENDER TABLE ──────────────────────────────────────────────────────────────
 function renderTable(){
   var tbody = document.getElementById('stock-tbody');
@@ -3577,7 +5646,7 @@ function renderTable(){
     var volColor = s.vol_ratio >= 1.5 ? 'var(--green)' : s.vol_ratio >= 0.8 ? 'var(--text)' : 'var(--muted)';
 
     html += '<tr class="stock-row'+selClass+'" onclick="selectStock(\''+s.ticker+'\')" data-ticker="'+s.ticker+'">';
-    html += '<td><strong style="color:var(--cyan)">'+s.ticker+'</strong>'+(s.vcp?' <span class="badge bp" style="font-size:9px">VCP</span>':'')+'</td>';
+    html += '<td><strong style="color:var(--cyan)">'+s.ticker+'</strong>'+(s.vcp?' <span class="badge bp" style="font-size:9px">VCP</span>':'')+_newBadge(s)+'</td>';
     html += '<td>'+_currencySymbol+num(s.price)+'</td>';
     html += '<td><span style="color:'+(s.rs_rank>=85?'var(--green)':s.rs_rank>=70?'var(--text)':'var(--amber)')+';font-weight:700">'+s.rs_rank+'</span></td>';
     html += '<td>'+passedBadge+'</td>';
@@ -3612,6 +5681,9 @@ function renderTable(){
   });
   tbody.innerHTML = html;
   _renderLoadMore(filteredStocks.length, 'renderTable');
+  if(!document.getElementById('new-subsection')){
+    _renderNewSubsection(currentStocks.filter(function(s){ return _isNewMap[s.ticker] || s.is_new; }));
+  }
 }
 
 function _renderLoadMore(total, rendererName){
@@ -3635,6 +5707,7 @@ function loadMore(rendererName){
   else if(rendererName === 'renderNewlyAddedTable') renderNewlyAddedTable(filteredStocks);
   else if(rendererName === 'renderCciTable') renderCciTable(filteredStocks, currentScreen);
   else if(rendererName === 'renderHtfTable') renderHtfTable(filteredStocks, currentScreen);
+  else if(rendererName === 'renderIpoBaseTable') renderIpoBaseTable(filteredStocks); // used by both ipo_base and ipo_near_pivot
   else renderTable();
 }
 
@@ -5812,6 +7885,166 @@ function scrollRowIntoView(ticker){
     if(_input)   _input.disabled   = b;
   }
 })();
+
+// ── ATH Live Signals — showAthSignals() + renderAthSignals() ─────────────────
+function showAthSignals(){
+  // Deactivate all sidebar buttons
+  document.querySelectorAll('.sb-btn').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('btn-ath_signals').classList.add('active');
+
+  // Clean up any existing panels
+  ['alert-panel','ath-signal-panel','bt-banner','v4-banner'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.remove();
+  });
+
+  var tpBody = document.querySelector('.tp-body');
+  document.getElementById('stock-table').style.display = 'none';
+
+  var data = window.ATH_SIGNALS;
+  var signals = data && data.signals ? data.signals : [];
+
+  // Header banner
+  var hdr = document.createElement('div');
+  hdr.id = 'ath-signal-panel';
+  hdr.style.cssText = 'padding:10px 16px 0;background:rgba(52,211,153,.07);border-bottom:2px solid rgba(52,211,153,.25);flex-shrink:0';
+  var stats = data ? data.backtest_stats : {};
+  hdr.innerHTML =
+    '<div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;padding-bottom:10px">'
+   +'<span style="font-size:24px;margin-top:2px">&#128200;</span>'
+   +'<div style="flex:1;min-width:220px">'
+   +'<div style="font-size:13px;font-weight:700;color:#34d399">ATH × SEPA Buy Signals — New All-Time Highs Today</div>'
+   +'<div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.7">'
+   +'Entry: new ATH close &nbsp;|&nbsp; Vol ≥ 1.5× 50d avg &nbsp;|&nbsp; Minervini ≥ 6/8 (Stage 2) &nbsp;|&nbsp; RS > Nifty 50 &nbsp;|&nbsp; Ranked by RS strength'
+   +'<br>Exit: 7% stop &nbsp;|&nbsp; 8% trail (after +15%) &nbsp;|&nbsp; time-stop day 15 (&lt;+3%) &nbsp;|&nbsp; 5 concurrent slots &nbsp;|&nbsp; 2% risk / trade'
+   +'</div>'
+   +'</div>'
+   +'<div style="display:flex;gap:18px;flex-shrink:0;align-items:center">'
+   +'<div style="text-align:center">'
+   +'<div style="font-size:22px;font-weight:700;color:#34d399">'+signals.length+'</div>'
+   +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Signals Today</div>'
+   +'</div>'
+   +'<div style="text-align:center">'
+   +'<div style="font-size:15px;font-weight:700;color:#34d399">'+(stats.cagr||'—')+'</div>'
+   +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Backtest CAGR</div>'
+   +'</div>'
+   +'<div style="text-align:center">'
+   +'<div style="font-size:15px;font-weight:700;color:#34d399">'+(stats.calmar||'—')+'</div>'
+   +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Calmar</div>'
+   +'</div>'
+   +'<div style="text-align:center">'
+   +'<div style="font-size:15px;font-weight:700;color:#34d399">'+(stats.win_rate||'—')+'</div>'
+   +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em">Win Rate</div>'
+   +'</div>'
+   +'<div style="text-align:center">'
+   +'<div style="font-size:11px;color:var(--muted)">Scan: '+(data ? data.scan_date : '—')+'</div>'
+   +'<div style="font-size:10px;color:var(--muted)">'+(stats.period||'')+'</div>'
+   +'</div>'
+   +'</div>'
+   +'</div>';
+  tpBody.insertBefore(hdr, tpBody.firstChild);
+  renderAthSignals(signals, tpBody);
+}
+
+function renderAthSignals(signals, tpBody){
+  document.querySelectorAll('.ath-card-wrap').forEach(function(el){ el.remove(); });
+
+  function inr(v){ return '₹'+Number(v).toLocaleString('en-IN'); }
+  function crit(s){
+    var arr=[s.c1,s.c2,s.c3,s.c4,s.c5,s.c6,s.c7,s.c8];
+    return arr.map(function(v,i){
+      return '<span style="display:inline-block;width:18px;height:18px;line-height:18px;text-align:center;border-radius:3px;font-size:9px;font-weight:700;margin:1px;'
+        +(v?'background:rgba(52,211,153,.2);color:#34d399':'background:rgba(100,100,100,.15);color:var(--muted)')
+        +'">C'+(i+1)+'</span>';
+    }).join('');
+  }
+
+  if(!signals || signals.length===0){
+    var empty = document.createElement('div');
+    empty.className = 'ath-card-wrap';
+    empty.style.cssText = 'padding:40px;text-align:center;color:var(--muted)';
+    empty.innerHTML = '<div style="font-size:28px;margin-bottom:8px">&#128200;</div>'
+      +'<div style="font-size:13px">No ATH buy signals today.</div>'
+      +'<div style="font-size:11px;margin-top:6px">Run <code>backtest_ath_india_5pos.py</code> after market close to refresh signals.</div>';
+    tpBody.appendChild(empty);
+    return;
+  }
+
+  // Grid wrapper
+  var grid = document.createElement('div');
+  grid.className = 'ath-card-wrap';
+  grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;padding:14px 16px;overflow-y:auto';
+  tpBody.appendChild(grid);
+
+  signals.forEach(function(s, idx){
+    var card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface);border:1px solid rgba(52,211,153,.22);border-radius:8px;padding:14px;position:relative;overflow:hidden';
+
+    // rank badge
+    var rsBadge = s.rs_63d_pct > 30 ? '#34d399' : s.rs_63d_pct > 15 ? '#fbbf24' : '#94a3b8';
+    var stopPct  = ((s.price - s.stop_price)/s.price*100).toFixed(1);
+    var upToTrail= ((s.trail_trigger/s.price-1)*100).toFixed(1);
+
+    card.innerHTML =
+      '<div style="position:absolute;top:10px;right:12px;font-size:10px;color:var(--muted);background:rgba(52,211,153,.08);padding:2px 7px;border-radius:4px;border:1px solid rgba(52,211,153,.2)">'
+      +'#'+(idx+1)+' by RS'
+      +'</div>'
+      // header
+      +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+      +'<span style="font-size:18px;font-weight:700;color:#34d399;font-family:monospace">'+s.ticker+'</span>'
+      +'<span style="font-size:11px;padding:2px 8px;border-radius:4px;background:rgba(52,211,153,.15);color:#34d399;font-weight:600">ATH BREAKOUT</span>'
+      +'<span style="font-size:11px;color:var(--muted)">'+s.date+'</span>'
+      +'</div>'
+      // price row
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'
+      +'<div style="background:rgba(52,211,153,.07);border-radius:6px;padding:7px 10px">'
+      +'<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Entry Price</div>'
+      +'<div style="font-size:16px;font-weight:700;color:#34d399;font-family:monospace">'+inr(s.price)+'</div>'
+      +'</div>'
+      +'<div style="background:rgba(239,68,68,.07);border-radius:6px;padding:7px 10px">'
+      +'<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Stop Loss (7%)</div>'
+      +'<div style="font-size:16px;font-weight:700;color:#f87171;font-family:monospace">'+inr(s.stop_price)+'</div>'
+      +'<div style="font-size:9px;color:var(--muted)">-'+stopPct+'% from entry</div>'
+      +'</div>'
+      +'<div style="background:rgba(251,191,36,.07);border-radius:6px;padding:7px 10px">'
+      +'<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Trail Trigger (+15%)</div>'
+      +'<div style="font-size:15px;font-weight:700;color:#fbbf24;font-family:monospace">'+inr(s.trail_trigger)+'</div>'
+      +'<div style="font-size:9px;color:var(--muted)">then 8% trail activates</div>'
+      +'</div>'
+      +'</div>'
+      // sizing row
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'
+      +'<div style="background:rgba(30,30,50,.4);border-radius:6px;padding:7px 10px">'
+      +'<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Shares (₹20L port)</div>'
+      +'<div style="font-size:15px;font-weight:700;color:#e2e8f0;font-family:monospace">'+s.shares_2l_port.toLocaleString()+'</div>'
+      +'</div>'
+      +'<div style="background:rgba(30,30,50,.4);border-radius:6px;padding:7px 10px">'
+      +'<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Position Cost</div>'
+      +'<div style="font-size:15px;font-weight:700;color:#e2e8f0;font-family:monospace">'+inr(s.cost_2l_port)+'</div>'
+      +'</div>'
+      +'<div style="background:rgba(30,30,50,.4);border-radius:6px;padding:7px 10px">'
+      +'<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Risk (2% of ₹20L)</div>'
+      +'<div style="font-size:15px;font-weight:700;color:#f87171;font-family:monospace">'+inr(s.risk_2l_port)+'</div>'
+      +'<div style="font-size:9px;color:var(--muted)">'+(s.size_capped?'⚠ capped at 20%':'')+'</div>'
+      +'</div>'
+      +'</div>'
+      // RS & vol row
+      +'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'
+      +'<span style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(52,211,153,.12);color:'+rsBadge+';font-weight:600">RS 63d: +'+s.rs_63d_pct.toFixed(1)+'%</span>'
+      +'<span style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(100,100,100,.15);color:var(--muted)">Nifty: +'+s.nifty_rs_63d_pct.toFixed(1)+'%</span>'
+      +'<span style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(99,102,241,.12);color:#818cf8;font-weight:600">Vol '+s.vol_ratio.toFixed(1)+'×</span>'
+      +'<span style="font-size:11px;padding:3px 8px;border-radius:4px;background:rgba(52,211,153,.08);color:#34d399">Score '+s.minervini_score+'/8</span>'
+      +'<span style="font-size:11px;color:var(--muted)">'+s.pct_above_lo52.toFixed(0)+'% above 52wLow</span>'
+      +'</div>'
+      // criteria pills
+      +'<div style="margin-bottom:4px">'+crit(s)+'</div>'
+      // SMAs
+      +'<div style="font-size:10px;color:var(--muted);margin-top:6px">'
+      +'SMA50 '+inr(s.sma50)+' &nbsp;|&nbsp; SMA150 '+inr(s.sma150)+' &nbsp;|&nbsp; SMA200 '+inr(s.sma200)
+      +'</div>';
+
+    grid.appendChild(card);
+  });
+}
 </script>
 </body>
 </html>
