@@ -34,7 +34,10 @@ venv/
 # Docker volumes (Langfuse data)
 langfuse/pgdata/
 
+# ATH live signals (runtime generated)
+ath_live_signals.json
+ath_signals_embed.js
+
 # Stock price cache
-.cache/
 .cache/
 .cache_us/

@@ -402,7 +402,8 @@ def fetch_data(sym):
         if time.time() - os.path.getmtime(cp) < CACHE_TTL_SEC:
             try:
                 with open(cp, 'rb') as f:
-                    return pickle.load(f)
+                    df = pickle.load(f)
+                return _patch_today_bar(df, sym)
             except:
                 pass
     try:
@@ -418,9 +419,53 @@ def fetch_data(sym):
             return None
         with open(cp, 'wb') as f:
             pickle.dump(df, f)
-        return df
+        return _patch_today_bar(df, sym)
     except:
         return None
+
+
+def _patch_today_bar(df, sym):
+    """Append today's bar from 5m data when yfinance daily close is NaN/missing."""
+    try:
+        import datetime as _dt
+        from datetime import timezone as _tz, timedelta as _td
+        IST = _tz(_td(hours=5, minutes=30))
+        today = _dt.datetime.now(IST).date()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+        if len(df) == 0:
+            return df
+        last_d = df.index[-1].date() if hasattr(df.index[-1], 'date') else df.index[-1]
+        if last_d >= today:
+            return df
+        # Fetch today's 5m bar to patch the missing close
+        intra = yf.download(sym, period='1d', interval='5m',
+                            progress=False, auto_adjust=False, timeout=10)
+        if intra is None or intra.empty:
+            return df
+        if isinstance(intra.columns, pd.MultiIndex):
+            intra.columns = intra.columns.get_level_values(0)
+        closes = intra['Close'].dropna()
+        if closes.empty:
+            return df
+        intra_date = closes.index[-1].date() if hasattr(closes.index[-1], 'date') else closes.index[-1]
+        if intra_date != today:
+            return df
+        live_p = float(closes.iloc[-1])
+        prev_c = float(df['Close'].iloc[-1])
+        idx_tz = df.index.tz
+        today_ts = pd.Timestamp(today).tz_localize(idx_tz) if idx_tz else pd.Timestamp(today)
+        today_row = pd.DataFrame({
+            'Open':   [prev_c],
+            'High':   [float(intra['High'].max())],
+            'Low':    [float(intra['Low'].min())],
+            'Close':  [live_p],
+            'Volume': [int(intra['Volume'].sum())],
+        }, index=[today_ts])
+        return pd.concat([df, today_row])
+    except Exception:
+        return df
 
 # ── RS RANK (IBD-style weighted 12-month performance, Minervini SEPA) ────────
 # Formula: rank each stock's 12-month return (weighted by recency) as a
@@ -597,9 +642,8 @@ def evaluate_ipo(df, rs_rank):
         vol_today = float(v.iloc[-1])
         vol_ratio = vol_today / vol_avg20 if vol_avg20 > 0 else 1.0
 
-        # Daily pivot (use left=5,right=5 for IPOs — shorter history)
-        pv_high, pv_bars, pv_crossed = calc_pivot_high(df, left=5, right=5)
-        pv_high_w, pv_bars_w, pv_crossed_w = calc_pivot_high(df, left=5, right=5, weekly=True)
+        pv_high, pv_bars, pv_crossed = calc_pivot_high(df, left=10, right=10)
+        pv_high_w, pv_bars_w, pv_crossed_w = calc_pivot_high(df, left=10, right=10, weekly=True)
         pct_pivot   = _pma(pv_high)
         pct_pivot_w = _pma(pv_high_w)
 
@@ -1474,38 +1518,47 @@ def detect_weekly_hl_pivot(df, rs_rank=0):
 def detect_hhhl(df):
     """
     Detects stocks in a confirmed uptrend (HH+HL structure) pulling back
-    to near the most recent confirmed Higher Low.
+    toward the most recent confirmed Higher Low.
+
+    Uses left=10, right=10 pivot logic — identical to the chart viewer and
+    TradingView ta.pivothigh/ta.pivotlow(10,10) so pivots match what is
+    labeled on the charts exactly.
 
     Conditions:
-      1. At least 2 confirmed pivot highs — each higher than the previous (HH)
-      2. At least 2 confirmed pivot lows  — each higher than the previous (HL)
-      3. Sequence is valid: prev_HL → prev_HH → recent_HL → recent_HH → now pulling back
-      4. Current price is 0–8% above the most recent pivot low (near the HL)
-      5. Pullback from most recent pivot high is 8–35% (healthy, not a breakdown)
-      6. Price is above MA50 (uptrend confirmed by MA)
+      1. At least 2 confirmed pivot highs ascending (Higher Highs)
+      2. At least 2 confirmed pivot lows  ascending (Higher Lows)
+      3. Sequence: prev_HL → prev_HH → recent_HL → recent_HH → pulling back now
+      4. Current price is between the recent HL and the recent HH (in the pullback zone)
+      5. Pullback from recent HH is 5–40% (healthy correction)
+      6. Price is above MA50
     Returns (is_setup, details|None)
     """
-    PIVOT_N      = 5     # bars on each side to confirm a swing pivot
-    LOOKBACK     = 150   # bars of history to scan
-    NEAR_HL_MAX  = 8.0   # max % above the recent HL
-    PB_MIN       = 8.0   # min pullback % from recent HH
-    PB_MAX       = 35.0  # max pullback % from recent HH
+    LEFT  = 10   # bars on each side — matches chart viewer find_pivot_highs/lows
+    RIGHT = 10
+    LOOKBACK = 200
+    PB_MIN   = 5.0    # min pullback % from recent HH (relaxed — catches earlier setups)
+    PB_MAX   = 40.0   # max pullback % (allow deeper corrections in strong uptrends)
 
-    if len(df) < LOOKBACK + PIVOT_N * 2:
+    if len(df) < LOOKBACK:
         return False, None
     try:
-        recent  = df.iloc[-LOOKBACK:]
-        highs   = recent['High'].values
-        lows    = recent['Low'].values
-        closes  = recent['Close'].values
-        n       = len(recent)
+        src   = df.iloc[-LOOKBACK:].copy()
+        highs = src['High'].values.astype(float)
+        lows  = src['Low'].values.astype(float)
+        closes= src['Close'].values.astype(float)
+        n     = len(src)
 
-        # Find all confirmed pivot highs and lows
+        # Find all confirmed pivot highs using same logic as chart viewer (left=10, right=10)
         pivot_highs, pivot_lows = [], []
-        for i in range(PIVOT_N, n - PIVOT_N):
-            if highs[i] == max(highs[i - PIVOT_N: i + PIVOT_N + 1]):
+        for i in range(LEFT, n - RIGHT):
+            win_h = highs[i - LEFT: i + RIGHT + 1]
+            wmax  = float(np.max(win_h))
+            if float(highs[i]) == wmax and np.sum(win_h == wmax) == 1:
                 pivot_highs.append((i, float(highs[i])))
-            if lows[i]  == min(lows[i  - PIVOT_N: i + PIVOT_N + 1]):
+
+            win_l = lows[i - LEFT: i + RIGHT + 1]
+            wmin  = float(np.min(win_l))
+            if float(lows[i]) == wmin and np.sum(win_l == wmin) == 1:
                 pivot_lows.append((i, float(lows[i])))
 
         if len(pivot_highs) < 2 or len(pivot_lows) < 2:
@@ -1523,33 +1576,37 @@ def detect_hhhl(df):
         if pl_last <= pl_prev:
             return False, None
 
-        # Sequence check: prev_HL → prev_HH → recent_HL → recent_HH
-        # i.e. pl_prev before ph_prev, ph_prev before pl_last, pl_last before ph_last
+        # Sequence check: prev_HL → prev_HH → recent_HL → recent_HH (left to right)
         if not (pl_prev_idx < ph_prev_idx < pl_last_idx < ph_last_idx):
             return False, None
 
-        curr = float(closes[-1])
+        # Use last valid (non-NaN) close — today's bar may be incomplete
+        valid_closes = closes[~np.isnan(closes)]
+        if len(valid_closes) == 0:
+            return False, None
+        curr = float(valid_closes[-1])
 
         # Price must be above MA50
         ma50_val = float(df['Close'].iloc[-50:].mean()) if len(df) >= 50 else None
         if ma50_val is None or curr < ma50_val:
             return False, None
 
-        # Near the recent Higher Low (0–8% above it)
-        pct_from_hl = (curr - pl_last) / pl_last * 100.0
-        if not (0.0 <= pct_from_hl <= NEAR_HL_MAX):
-            return False, None
+        # Price must be in the pullback zone: between recent HL and recent HH
+        if curr < pl_last:
+            return False, None   # broke below HL — not a pullback, potential breakdown
 
-        # Healthy pullback from the recent Higher High (8–35%)
+        # Healthy pullback from the recent Higher High (5–40%)
         pullback = (ph_last - curr) / ph_last * 100.0
         if not (PB_MIN <= pullback <= PB_MAX):
             return False, None
 
+        pct_from_hl = (curr - pl_last) / pl_last * 100.0
+
         return True, {
-            'hhhl_hh':          round(ph_last, 2),
-            'hhhl_hl':          round(pl_last, 2),
+            'hhhl_hh':           round(ph_last, 2),
+            'hhhl_hl':           round(pl_last, 2),
             'hhhl_pullback_pct': round(pullback, 1),
-            'hhhl_pct_from_hl': round(pct_from_hl, 1),
+            'hhhl_pct_from_hl':  round(pct_from_hl, 1),
         }
     except Exception:
         return False, None
@@ -4524,6 +4581,35 @@ def run():
         f.write(';')
     os.replace(tmp_js, RESULTS_JS)
 
+    # ── PATCH PRICES with live closing prices ────────────────────────────────
+    try:
+        _lp_path = os.path.join(os.path.dirname(BASE_DIR),
+                                'chart-pattern-viewer', 'live_prices.json')
+        if os.path.exists(_lp_path):
+            with open(_lp_path) as _lpf:
+                _lp = json.load(_lpf).get('prices', {})
+            if _lp:
+                _patched = 0
+                for _scr in result.get('screens', {}).values():
+                    for _s in _scr.get('stocks', []):
+                        _t = _s.get('ticker', '')
+                        if _t in _lp:
+                            _s['price'] = _lp[_t]['price']
+                            _patched += 1
+                if _patched:
+                    _tmp2j = RESULTS_JSON + '.tmp'
+                    _tmp2s = RESULTS_JS   + '.tmp'
+                    with open(_tmp2j, 'w') as _f:
+                        _f.write(_sanitize(json.dumps(result, indent=2)))
+                    os.replace(_tmp2j, RESULTS_JSON)
+                    with open(_tmp2s, 'w') as _f:
+                        _f.write('window.SCAN_DATA = ')
+                        _f.write(_sanitize(json.dumps(result)))
+                        _f.write(';')
+                    os.replace(_tmp2s, RESULTS_JS)
+    except Exception:
+        pass
+
     # ── CCI HISTORY — append today's counts ──────────────────────────────────
     try:
         if os.path.exists(CCI_HISTORY_JSON):
@@ -4624,6 +4710,31 @@ def run():
                 f.write(_sanitize(json.dumps(result)))
                 f.write(';')
             os.replace(tmp_js2, RESULTS_JS)
+            # Re-patch prices after market analysis rewrite
+            try:
+                _lp_path2 = os.path.join(os.path.dirname(BASE_DIR),
+                                         'chart-pattern-viewer', 'live_prices.json')
+                if os.path.exists(_lp_path2):
+                    with open(_lp_path2) as _lpf2:
+                        _lp2 = json.load(_lpf2).get('prices', {})
+                    if _lp2:
+                        for _scr2 in result.get('screens', {}).values():
+                            for _s2 in _scr2.get('stocks', []):
+                                _t2 = _s2.get('ticker', '')
+                                if _t2 in _lp2:
+                                    _s2['price'] = _lp2[_t2]['price']
+                        _tmp3j = RESULTS_JSON + '.tmp'
+                        _tmp3s = RESULTS_JS   + '.tmp'
+                        with open(_tmp3j, 'w') as _f3:
+                            _f3.write(_sanitize(json.dumps(result, indent=2)))
+                        os.replace(_tmp3j, RESULTS_JSON)
+                        with open(_tmp3s, 'w') as _f3:
+                            _f3.write('window.SCAN_DATA = ')
+                            _f3.write(_sanitize(json.dumps(result)))
+                            _f3.write(';')
+                        os.replace(_tmp3s, RESULTS_JS)
+            except Exception:
+                pass
             print(f"  Market analysis embedded in results (regime: {market_analysis.get('regime','?')})")
             # ── CCI HISTORY — update regime now that we have it ───────────────
             try:

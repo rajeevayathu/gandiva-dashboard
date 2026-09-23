@@ -7,11 +7,15 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="results_embed.js" onerror="window.SCAN_DATA=null"></script>
-<script src="results_us_embed.js" onerror="window.SCAN_DATA_US=null"></script>
-<script src="breadth_embed.js" onerror="window.BREADTH_DATA=null"></script>
-<script src="cci_history_embed.js" onerror="window.CCI_HISTORY_DATA=null"></script>
-<script src="ath_signals_embed.js" onerror="window.ATH_SIGNALS=null"></script>
+<script>
+// Cache-bust embed scripts so stale prices are never served from browser cache
+var _ebv = '?v=' + Math.floor(Date.now() / 60000);
+document.write('<scr'+'ipt src="results_embed.js'    +_ebv+'" onerror="window.SCAN_DATA=null"><\/scr'+'ipt>');
+document.write('<scr'+'ipt src="results_us_embed.js' +_ebv+'" onerror="window.SCAN_DATA_US=null"><\/scr'+'ipt>');
+document.write('<scr'+'ipt src="breadth_embed.js'    +_ebv+'" onerror="window.BREADTH_DATA=null"><\/scr'+'ipt>');
+document.write('<scr'+'ipt src="cci_history_embed.js'+_ebv+'" onerror="window.CCI_HISTORY_DATA=null"><\/scr'+'ipt>');
+document.write('<scr'+'ipt src="ath_signals_embed.js'+_ebv+'" onerror="window.ATH_SIGNALS=null"><\/scr'+'ipt>');
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <style>
