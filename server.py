@@ -14,6 +14,19 @@ from datetime import datetime
 
 PORT      = 8765
 BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+
+# ── Load .env for API keys ────────────────────────────────────────────────────
+def _load_env():
+    env_path = os.path.join(BASE_DIR, '.env')
+    if os.path.exists(env_path):
+        with open(env_path) as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line and not _line.startswith('#') and '=' in _line:
+                    _k, _v = _line.split('=', 1)
+                    os.environ.setdefault(_k.strip(), _v.strip())
+_load_env()
+GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 RESULTS_JSON     = os.path.join(BASE_DIR, 'results.json')
 BREADTH_JSON     = os.path.join(BASE_DIR, 'breadth.json')
 CCI_HISTORY_JSON = os.path.join(BASE_DIR, 'cci_history.json')
@@ -124,11 +137,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._serve_file_json(BREADTH_JSON)
         elif self.path == '/api/cci-history':
             self._serve_file_json(CCI_HISTORY_JSON)
+        elif self.path == '/api/ai/chat':
+            self._send_json({'error': 'Use POST'}, status=405)
         elif self.path == '/api/status':
             self._serve_status()
         elif self.path in ('/', '/dashboard.html'):
             self.path = '/dashboard.html'
-            super().do_GET()
+            # Serve dashboard.html directly with no-cache so browsers always get the latest
+            import os as _os
+            _fpath = _os.path.join(BASE_DIR, 'dashboard.html')
+            try:
+                with open(_fpath, 'rb') as _fh:
+                    _data = _fh.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/html; charset=utf-8')
+                self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
+                self.send_header('Content-Length', str(len(_data)))
+                self.end_headers()
+                self.wfile.write(_data)
+            except Exception:
+                super().do_GET()
         else:
             super().do_GET()
 
@@ -137,6 +167,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.path == '/api/scan':
             started = trigger_scan()
             self._send_json({'status': 'started' if started else 'already_running'})
+        elif self.path == '/api/ai/stream':
+            self._handle_ai_stream()
+        elif self.path == '/api/ai/chat':
+            self._handle_ai_chat()
+        elif self.path == '/api/morning-brief':
+            self._handle_morning_brief()
+        elif self.path == '/api/register-telegram':
+            self._handle_register_telegram()
         elif self.path == '/api/save-csv':
             try:
                 length = int(self.headers.get('Content-Length', 0))
@@ -156,6 +194,86 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
 
     # ── API helpers ───────────────────────────────────────────────────────────
+    def _handle_ai_stream(self):
+        """Server-Sent Events streaming endpoint — tokens appear word by word."""
+        if not GROQ_API_KEY:
+            self._send_json({'error': 'GROQ_API_KEY not set in .env file'}, status=500)
+            return
+        try:
+            length  = int(self.headers.get('Content-Length', 0))
+            body    = json.loads(self.rfile.read(length))
+            message = (body.get('message') or '').strip()
+            if not message:
+                self._send_json({'error': 'Empty message'}, status=400)
+                return
+
+            self.send_response(200)
+            self.send_header('Content-Type',  'text/event-stream')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Connection',    'keep-alive')
+            self._cors()
+            self.end_headers()
+
+            from ai_agent import run_agent_stream
+            for event in run_agent_stream(message, GROQ_API_KEY):
+                line = f'data: {json.dumps(event)}\n\n'
+                self.wfile.write(line.encode())
+                self.wfile.flush()
+
+        except Exception as e:
+            try:
+                err = f'data: {json.dumps({"type":"error","text":str(e)})}\n\n'
+                self.wfile.write(err.encode())
+                self.wfile.flush()
+            except Exception:
+                pass
+
+    def _handle_morning_brief(self):
+        """Run agentic morning brief — save HTML + send Telegram."""
+        if not GROQ_API_KEY:
+            self._send_json({'error': 'GROQ_API_KEY not set in .env'}, status=500)
+            return
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body   = json.loads(self.rfile.read(length)) if length else {}
+            send_tg = body.get('send_telegram', True)
+            from morning_brief import run_morning_brief
+            html_path, tg_sent = run_morning_brief(send_telegram=send_tg)
+            self._send_json({
+                'status':        'done',
+                'html_path':     html_path,
+                'telegram_sent': tg_sent,
+            })
+        except Exception as e:
+            self._send_json({'error': str(e)}, status=500)
+
+    def _handle_register_telegram(self):
+        """Start polling for /start message to register chat_id."""
+        def _poll():
+            from telegram_bot import register_via_polling
+            register_via_polling(timeout_sec=120)
+        import threading
+        threading.Thread(target=_poll, daemon=True).start()
+        self._send_json({'status': 'polling', 'message':
+            'Send /start to @GandivaScannerBot in Telegram within 2 minutes.'})
+
+    def _handle_ai_chat(self):
+        if not GROQ_API_KEY:
+            self._send_json({'error': 'GROQ_API_KEY not set in .env file'}, status=500)
+            return
+        try:
+            length  = int(self.headers.get('Content-Length', 0))
+            body    = json.loads(self.rfile.read(length))
+            message = (body.get('message') or '').strip()
+            if not message:
+                self._send_json({'error': 'Empty message'}, status=400)
+                return
+            from ai_agent import run_agent
+            answer, tools_used, cards = run_agent(message, GROQ_API_KEY)
+            self._send_json({'answer': answer, 'tools_used': tools_used, 'cards': cards})
+        except Exception as e:
+            self._send_json({'error': str(e)}, status=500)
+
     def _serve_results(self):
         if not os.path.exists(RESULTS_JSON):
             self._send_json({'error': 'no_data'}, status=404)

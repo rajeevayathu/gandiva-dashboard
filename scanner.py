@@ -261,21 +261,9 @@ MIN_LEVERAGE  = 2.0   # only include stocks with leverage >= this
 def fetch_mtf_symbols(min_leverage=MIN_LEVERAGE):
     """
     Fetch Zerodha MTF approved securities from Zerodha's JSON API.
-    Returns a set of uppercase NSE trading symbols with leverage >= min_leverage.
-    Caches result for 23 hours. Falls back gracefully on any error.
+    Always fetches live — the list changes daily so cache is never used as primary.
+    Cache is written on success and used only as fallback if the live fetch fails.
     """
-    # Return cached version if fresh enough
-    if os.path.exists(MTF_CACHE):
-        if time.time() - os.path.getmtime(MTF_CACHE) < CACHE_TTL_SEC:
-            try:
-                with open(MTF_CACHE, 'rb') as f:
-                    cached = pickle.load(f)
-                    print(f"  MTF: using cached list ({len(cached)} symbols, leverage >= {min_leverage}x)")
-                    return cached
-            except:
-                pass
-
-    # Zerodha's page is JS-rendered; the actual data comes from this JSON endpoint
     API_URL = 'https://public.zrd.sh/crux/approved-mtf-securities.json'
     print(f"  MTF: fetching live list from Zerodha API ...")
     try:
@@ -314,12 +302,22 @@ def fetch_mtf_symbols(min_leverage=MIN_LEVERAGE):
 
         print(f"  MTF: {len(symbols)} symbols with leverage >= {min_leverage}x "
               f"({skipped} below threshold)")
+        # Save as fallback cache in case next run is offline
         with open(MTF_CACHE, 'wb') as f:
             pickle.dump(symbols, f)
         return symbols
 
     except Exception as e:
-        print(f"  MTF: fetch failed ({e}) — scanning all NSE symbols")
+        # Live fetch failed — fall back to yesterday's cache if available
+        if os.path.exists(MTF_CACHE):
+            try:
+                with open(MTF_CACHE, 'rb') as f:
+                    cached = pickle.load(f)
+                print(f"  MTF: live fetch failed ({e}) — using cached list ({len(cached)} symbols)")
+                return cached
+            except Exception:
+                pass
+        print(f"  MTF: fetch failed ({e}) and no cache available — scanning all NSE symbols")
         return None
 
 
@@ -404,7 +402,8 @@ def fetch_data(sym):
         if time.time() - os.path.getmtime(cp) < CACHE_TTL_SEC:
             try:
                 with open(cp, 'rb') as f:
-                    return pickle.load(f)
+                    df = pickle.load(f)
+                return _patch_today_bar(df, sym)
             except:
                 pass
     try:
@@ -420,9 +419,53 @@ def fetch_data(sym):
             return None
         with open(cp, 'wb') as f:
             pickle.dump(df, f)
-        return df
+        return _patch_today_bar(df, sym)
     except:
         return None
+
+
+def _patch_today_bar(df, sym):
+    """Append today's bar from 5m data when yfinance daily close is NaN/missing."""
+    try:
+        import datetime as _dt
+        from datetime import timezone as _tz, timedelta as _td
+        IST = _tz(_td(hours=5, minutes=30))
+        today = _dt.datetime.now(IST).date()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
+        if len(df) == 0:
+            return df
+        last_d = df.index[-1].date() if hasattr(df.index[-1], 'date') else df.index[-1]
+        if last_d >= today:
+            return df
+        # Fetch today's 5m bar to patch the missing close
+        intra = yf.download(sym, period='1d', interval='5m',
+                            progress=False, auto_adjust=False, timeout=10)
+        if intra is None or intra.empty:
+            return df
+        if isinstance(intra.columns, pd.MultiIndex):
+            intra.columns = intra.columns.get_level_values(0)
+        closes = intra['Close'].dropna()
+        if closes.empty:
+            return df
+        intra_date = closes.index[-1].date() if hasattr(closes.index[-1], 'date') else closes.index[-1]
+        if intra_date != today:
+            return df
+        live_p = float(closes.iloc[-1])
+        prev_c = float(df['Close'].iloc[-1])
+        idx_tz = df.index.tz
+        today_ts = pd.Timestamp(today).tz_localize(idx_tz) if idx_tz else pd.Timestamp(today)
+        today_row = pd.DataFrame({
+            'Open':   [prev_c],
+            'High':   [float(intra['High'].max())],
+            'Low':    [float(intra['Low'].min())],
+            'Close':  [live_p],
+            'Volume': [int(intra['Volume'].sum())],
+        }, index=[today_ts])
+        return pd.concat([df, today_row])
+    except Exception:
+        return df
 
 # ── RS RANK (IBD-style weighted 12-month performance, Minervini SEPA) ────────
 # Formula: rank each stock's 12-month return (weighted by recency) as a
@@ -473,6 +516,7 @@ def evaluate(df, rs_rank):
         v = df['Volume'].squeeze()
 
         price   = float(c.iloc[-1])
+        ma20    = float(c.rolling(20).mean().iloc[-1])
         ma50    = float(c.rolling(50).mean().iloc[-1])
         ma150   = float(c.rolling(150).mean().iloc[-1])
         ma200   = float(c.rolling(200).mean().iloc[-1])
@@ -484,10 +528,22 @@ def evaluate(df, rs_rank):
         # Use intraday High/Low (not Close) to match NSE/TradingView 52-week values
         hi52 = float(h.rolling(252).max().iloc[-1])
         lo52 = float(l.rolling(252).min().iloc[-1])
+        ath  = float(h.max())   # all-time high from full available history
 
         vol_avg   = float(v.rolling(50).mean().iloc[-1])
         vol_today = float(v.iloc[-1])
         vol_ratio = (vol_today / vol_avg) if vol_avg > 0 else 1.0
+
+        # RS line trending up: compare 3-month return now vs 20 days ago
+        # True = stock is outperforming the market *more* than it was 20 days ago
+        try:
+            _ca = c.values
+            _n  = len(_ca)
+            _rs_now  = (_ca[-1]            / _ca[max(0, _n - 64)]) - 1 if _n > 63 else 0
+            _rs_prev = (_ca[max(0, _n - 21)] / _ca[max(0, _n - 84)]) - 1 if _n > 83 else _rs_now
+            rs_trending_up = bool(_rs_now > _rs_prev)
+        except Exception:
+            rs_trending_up = False
 
         # ── 8 CRITERIA ────────────────────────────────────────────────────────
         c1 = price > ma150 and price > ma200
@@ -513,6 +569,7 @@ def evaluate(df, rs_rank):
 
         return {
             'price':        price,
+            'ma20':         ma20,
             'ma50':         ma50,
             'ma150':        ma150,
             'ma200':        ma200,
@@ -520,9 +577,12 @@ def evaluate(df, rs_rank):
             'ema21':        ema21,
             'hi52':         hi52,
             'lo52':         lo52,
+            'ath':          ath,
             'rs_rank':      rs_rank,
-            'pct_from_high': (price - hi52) / hi52 * 100 if hi52 > 0 else 0,
-            'pct_above_low': (price - lo52) / lo52 * 100 if lo52 > 0 else 0,
+            'pct_from_high':  (price - hi52) / hi52 * 100 if hi52 > 0 else 0,
+            'pct_above_low':  (price - lo52) / lo52 * 100 if lo52 > 0 else 0,
+            'pct_from_ath':   (price - ath)  / ath  * 100 if ath  > 0 else 0,
+            'pct_from_ma20':  _pct_from_ma(price, ma20),
             'pct_from_ma50':  _pct_from_ma(price, ma50),
             'pct_from_ema21': _pct_from_ma(price, ema21),
             'pct_from_ema10': _pct_from_ma(price, ema10),
@@ -534,10 +594,11 @@ def evaluate(df, rs_rank):
             'pivot_bars_ago_w': pivot_bars_ago_w,
             'pivot_crossed_w':  pivot_crossed_w,
             'pct_from_pivot_w': pct_from_pivot_w,
-            'vol_ratio':    vol_ratio,
-            'criteria':     criteria,
-            'passed':       passed,
-            'all_pass':     passed == 8,
+            'vol_ratio':       vol_ratio,
+            'rs_trending_up':  rs_trending_up,
+            'criteria':        criteria,
+            'passed':          passed,
+            'all_pass':        passed == 8,
         }
     except:
         return None
@@ -581,9 +642,8 @@ def evaluate_ipo(df, rs_rank):
         vol_today = float(v.iloc[-1])
         vol_ratio = vol_today / vol_avg20 if vol_avg20 > 0 else 1.0
 
-        # Daily pivot (use left=5,right=5 for IPOs — shorter history)
-        pv_high, pv_bars, pv_crossed = calc_pivot_high(df, left=5, right=5)
-        pv_high_w, pv_bars_w, pv_crossed_w = calc_pivot_high(df, left=5, right=5, weekly=True)
+        pv_high, pv_bars, pv_crossed = calc_pivot_high(df, left=10, right=10)
+        pv_high_w, pv_bars_w, pv_crossed_w = calc_pivot_high(df, left=10, right=10, weekly=True)
         pct_pivot   = _pma(pv_high)
         pct_pivot_w = _pma(pv_high_w)
 
@@ -795,6 +855,172 @@ def detect_vcp(df):
     except:
         return False
 
+# ── V4 VCP DETECTION (exact zigzag from backtest_sepa_faithful.py) ────────────
+# Book: Ch.10 — 2-6 contractions, each smaller, volume dries up in final leg
+_V4VCP_BASE_MIN      = 10
+_V4VCP_BASE_MAX      = 90
+_V4VCP_MAX_DEPTH     = 0.50
+_V4VCP_MIN_C         = 2
+_V4VCP_MAX_C         = 6
+_V4VCP_C_SLACK       = 1.15
+_V4VCP_LAST_C_MAX    = 0.09
+_V4VCP_PIVOT_ZONE    = 0.05
+_V4VCP_VOL_DRY       = 0.70
+_V4VCP_ZZ_THRESH     = 0.05
+_V4VCP_ZZ_MIN_BARS   = 4
+
+def detect_vcp_v4(df, pivot_high=None, pivot_bars_ago=None):
+    """
+    Full zigzag VCP detection — exact same algorithm as backtest_sepa_faithful.py.
+    pivot_high / pivot_bars_ago: pass from evaluate() so the base anchors to the
+    confirmed resistance level rather than today's intraday high.
+    Returns dict (pivot, last_low, quality, n_contractions, base_depth) or None.
+    """
+    idx = len(df) - 1
+    if idx < _V4VCP_BASE_MAX + 20:
+        return None
+    try:
+        closes  = np.asarray(df['Close'].squeeze()).astype(float)
+        highs   = np.asarray(df['High'].squeeze()).astype(float)
+        lows    = np.asarray(df['Low'].squeeze()).astype(float)
+        volumes = np.asarray(df['Volume'].squeeze()).astype(float)
+        import pandas as _pd
+        vol50 = _pd.Series(volumes).rolling(50, min_periods=10).mean().values
+
+        base_end   = idx
+        base_start = max(0, idx - _V4VCP_BASE_MAX)
+        whi = highs[base_start:base_end+1]
+        wlo = lows[base_start:base_end+1]
+        n   = len(whi)
+        if n < _V4VCP_BASE_MIN:
+            return None
+
+        # Anchor the base to the KNOWN pivot high (from calc_pivot_high),
+        # not blind argmax — avoids anchoring to today's breakout spike.
+        if pivot_high and pivot_bars_ago and int(pivot_bars_ago) > 0:
+            pba = min(int(pivot_bars_ago), n - _V4VCP_BASE_MIN - 1)
+            base_hi_rel = max(0, n - pba - 1)
+            base_high   = float(pivot_high)
+        else:
+            # Fallback: argmax excluding last 5 bars
+            search_end  = max(n - 5, _V4VCP_BASE_MIN)
+            base_hi_rel = int(np.argmax(whi[:search_end]))
+            base_high   = float(whi[base_hi_rel])
+        current_price = float(closes[idx])
+        sub_hi = whi[base_hi_rel:]
+        sub_lo = wlo[base_hi_rel:]
+        m      = len(sub_hi)
+        if m < _V4VCP_BASE_MIN:
+            return None
+
+        overall_low = float(np.min(sub_lo))
+        base_depth  = (base_high - overall_low) / base_high
+        if base_depth > _V4VCP_MAX_DEPTH:
+            return None
+
+        peaks   = [{'val': base_high, 'rel': 0}]
+        valleys = []
+        last_lo_val = float(sub_lo[0]); last_lo_idx = 0
+        last_hi_val = None;             last_hi_idx = 0
+        state = 'valley'
+
+        for i in range(1, m):
+            h = sub_hi[i]; l = sub_lo[i]
+            if state == 'valley':
+                if l < last_lo_val:
+                    last_lo_val = l; last_lo_idx = i
+                if (h >= last_lo_val * (1 + _V4VCP_ZZ_THRESH)
+                        and i - last_lo_idx >= _V4VCP_ZZ_MIN_BARS):
+                    valleys.append({'val': last_lo_val, 'rel': last_lo_idx})
+                    last_hi_val = h; last_hi_idx = i; state = 'peak'
+            else:
+                if h > last_hi_val:
+                    last_hi_val = h; last_hi_idx = i
+                if (l <= last_hi_val * (1 - _V4VCP_ZZ_THRESH)
+                        and i - last_hi_idx >= _V4VCP_ZZ_MIN_BARS):
+                    peaks.append({'val': last_hi_val, 'rel': last_hi_idx})
+                    last_lo_val = l; last_lo_idx = i; state = 'valley'
+            if len(peaks) > _V4VCP_MAX_C + 1:
+                break
+
+        n_pairs = min(len(peaks), len(valleys))
+        contractions = []
+        for k in range(n_pairs):
+            p = peaks[k]; v = valleys[k]
+            depth = (p['val'] - v['val']) / p['val']
+            if depth >= 0.03:
+                contractions.append({'hi': p['val'], 'lo': v['val'], 'depth': depth,
+                                     'hi_idx': p['rel'], 'lo_idx': v['rel']})
+
+        if len(contractions) < _V4VCP_MIN_C:
+            return None
+        if contractions[-1]['depth'] > _V4VCP_LAST_C_MAX:
+            return None
+        if len(contractions) >= 2:
+            valid = True
+            for k in range(1, len(contractions)):
+                if contractions[k]['depth'] >= contractions[k-1]['depth'] * _V4VCP_C_SLACK:
+                    valid = False; break
+            if valid and contractions[-1]['depth'] >= contractions[0]['depth']:
+                valid = False
+            if not valid:
+                return None
+
+        if state == 'peak' and last_hi_val is not None and last_hi_val > valleys[-1]['val']:
+            pivot = float(last_hi_val)
+        else:
+            pivot = float(peaks[-1]['val'])
+
+        if current_price > pivot * (1 + _V4VCP_PIVOT_ZONE):
+            return None
+
+        hi52_val = float(highs[max(0, idx-252):idx+1].max())
+        if pivot < hi52_val * 0.85:
+            return None
+
+        last_hi_abs = base_start + base_hi_rel + contractions[-1]['hi_idx']
+        avg_vol = float(vol50[idx]) if not np.isnan(vol50[idx]) else 0
+        if avg_vol <= 0:
+            return None
+        if 0 < last_hi_abs < len(volumes):
+            final_vol_range = volumes[last_hi_abs:idx+1]
+            if len(final_vol_range) == 0:
+                return None
+            vol_dry = float(np.mean(final_vol_range)) < avg_vol * _V4VCP_VOL_DRY
+        else:
+            return None
+        if not vol_dry:
+            return None
+
+        base_abs_start = base_start + base_hi_rel
+        base_closes = closes[base_abs_start:idx+1]
+        base_vols   = volumes[base_abs_start:idx+1]
+        up_vol   = float(np.sum(base_vols[1:][np.diff(base_closes) > 0]))
+        down_vol = float(np.sum(base_vols[1:][np.diff(base_closes) < 0]))
+        accum_ratio = (up_vol / down_vol) if down_vol > 0 else 1.0
+        accum_score = 2 if accum_ratio >= 1.5 else 1 if accum_ratio >= 1.0 else 0
+
+        n_c         = min(len(contractions), 4)
+        depth_score = 3 if base_depth < 0.20 else 2 if base_depth < 0.35 else 1
+        cont_score  = min(n_c, 3)
+        quality     = depth_score + 3 + cont_score + accum_score
+
+        last_low = float(contractions[-1]['lo'])
+
+        return {
+            'pivot':          pivot,
+            'base_high':      base_high,
+            'base_depth':     round(base_depth * 100, 1),
+            'n_contractions': len(contractions),
+            'vol_dry':        True,
+            'quality':        quality,
+            'last_low':       last_low,
+            'accum_ratio':    round(accum_ratio, 2),
+            'avg_vol':        avg_vol,
+        }
+    except Exception:
+        return None
+
 # ── HIGH TIGHT FLAG DETECTION ─────────────────────────────────────────────────
 def detect_htf(df):
     """
@@ -945,41 +1171,394 @@ def detect_primary_base(df, listing_date_str, max_years):
         return False, None
 
 
+def detect_ipo_base(df, listing_date_str, rs_rank=0):
+    """
+    Minervini True IPO Base — the first tight consolidation after a recent listing.
+
+    Principles (from Trade Like a Stock Market Wizard & Think & Trade Like a Champion):
+      - Must be listed within 18 months (first-stage setup, no overhead supply)
+      - Within 15% of all-time high (price still near the top, not a crash recovery)
+      - Base range < 20% high-to-low (tight, controlled consolidation — no wild swings)
+      - Base high within 10% of ATH (base is anchored near the peak, not midway down)
+      - Volume dry-up during base: base avg volume < 80% of pre-base avg (institutions not selling)
+      - At least 3 weeks (15 trading days) of base formation
+      - Price above MA21 and MA50 (uptrend still intact within base)
+      - RS rank >= 60 (stock showing relative strength vs market)
+    """
+    MAX_MONTHS      = 18       # listed within 18 months
+    ATH_PROXIMITY   = 0.15     # within 15% of all-time high
+    BASE_MAX_RANGE  = 20.0     # base high-to-low range < 20%
+    BASE_ATH_GAP    = 0.10     # base high within 10% of ATH
+    VOL_DRY_UP      = 0.80     # base vol must be < 80% of pre-base vol
+    BASE_MIN_DAYS   = 15       # at least 3 weeks
+    BASE_MAX_DAYS   = 90       # look back up to 18 weeks
+    RS_MIN          = 60
+
+    try:
+        if listing_date_str is None or len(df) < 50:
+            return False, None
+        if rs_rank < RS_MIN:
+            return False, None
+
+        listing_date  = datetime.strptime(listing_date_str, '%Y-%m-%d')
+        months_listed = (datetime.today() - listing_date).days / 30.44
+        if months_listed > MAX_MONTHS or months_listed < 0:
+            return False, None
+
+        c    = df['Close'].squeeze()
+        h    = df['High'].squeeze()
+        lo   = df['Low'].squeeze()
+        v    = df['Volume'].squeeze()
+        curr = float(c.iloc[-1])
+        ath  = float(h.max())
+
+        # 1. Within 15% of ATH
+        pct_from_ath = (curr / ath - 1) * 100
+        if pct_from_ath < -(ATH_PROXIMITY * 100):
+            return False, None
+
+        # 2. Base window
+        window = min(BASE_MAX_DAYS, len(df) - 1)
+        if window < BASE_MIN_DAYS:
+            return False, None
+
+        base_h    = float(h.iloc[-window:].max())
+        base_l    = float(lo.iloc[-window:].min())
+        base_range = (base_h - base_l) / base_l * 100
+
+        # 3. Tight base range < 20%
+        if base_range > BASE_MAX_RANGE:
+            return False, None
+
+        # 4. Base anchored near ATH (not a midway crash)
+        if (base_h / ath - 1) * 100 < -(BASE_ATH_GAP * 100):
+            return False, None
+
+        # 5. Volume dry-up — base volume below pre-base (institutions not distributing)
+        pre_start = max(0, len(df) - window * 2)
+        pre_end   = max(0, len(df) - window)
+        pre_vol   = float(v.iloc[pre_start:pre_end].mean()) if pre_end > pre_start else None
+        base_vol  = float(v.iloc[-window:].mean())
+        if pre_vol and pre_vol > 0:
+            vol_ratio = base_vol / pre_vol
+            if vol_ratio >= VOL_DRY_UP:          # volume NOT drying up
+                return False, None
+            vol_ratio_fmt = round(vol_ratio, 2)
+        else:
+            vol_ratio_fmt = None
+
+        # 6. Price above MA21 and MA50 (uptrend intact)
+        if len(c) >= 21:
+            ma21 = float(c.rolling(21).mean().iloc[-1])
+            if curr < ma21:
+                return False, None
+        if len(c) >= 50:
+            ma50 = float(c.rolling(50).mean().iloc[-1])
+            if curr < ma50:
+                return False, None
+        else:
+            ma50 = None
+
+        # 7. Recent tightness — last 2 weeks should be tighter than the full base
+        tight_window = min(10, window)
+        tight_h = float(h.iloc[-tight_window:].max())
+        tight_l = float(lo.iloc[-tight_window:].min())
+        tight_range = (tight_h - tight_l) / tight_l * 100 if tight_l > 0 else 99
+
+        # 8. Weekly pivot — highest weekly high in the right side of the base (last 4 weeks).
+        # This is the exact buy point: price breaking above this level on volume is the entry.
+        try:
+            df_w = df.resample('W').agg({'High': 'max', 'Low': 'min', 'Close': 'last'})
+            tight_weeks = max(2, tight_window // 5 + 1)
+            weekly_pivot = float(df_w['High'].iloc[-tight_weeks:].max())
+        except Exception:
+            weekly_pivot = tight_h
+        pct_from_weekly_pivot = round((curr / weekly_pivot - 1) * 100, 1) if weekly_pivot else None
+
+        return True, {
+            'pct_from_ath'         : round(pct_from_ath, 1),
+            'base_range_pct'       : round(base_range, 1),
+            'tight_range_pct'      : round(tight_range, 1),
+            'base_days'            : window,
+            'months_listed'        : round(months_listed, 1),
+            'base_vol_ratio'       : vol_ratio_fmt,
+            'weekly_pivot'         : round(weekly_pivot, 2),
+            'pct_from_weekly_pivot': pct_from_weekly_pivot,
+        }
+    except Exception:
+        return False, None
+
+
+def detect_ipo_near_pivot(df, listing_date_str, rs_rank=0):
+    """
+    IPO stocks near their weekly pivot buy point.
+
+    Broader than detect_ipo_base — relaxed base criteria, but strict on pivot proximity.
+    The idea: any recent IPO that is coiling near its weekly high and could break out.
+
+    Conditions:
+      - Listed within 18 months
+      - RS rank >= 50
+      - Price above MA50 (uptrend intact)
+      - Within 25% of all-time high (not broken down)
+      - Weekly pivot (highest weekly high, last 3-4 weeks) computed
+      - Current price within 5% BELOW or 3% ABOVE the weekly pivot (the buy zone)
+    """
+    MAX_MONTHS    = 18
+    RS_MIN        = 50
+    ATH_PROXIMITY = 0.25   # within 25% of ATH
+    PIVOT_BELOW   = -5.0   # must be no more than 5% below pivot
+    PIVOT_ABOVE   =  3.0   # not more than 3% above (avoid chasing)
+    LOOK_BACK_W   = 4      # use last 4 weekly candles for pivot
+
+    try:
+        if listing_date_str is None or len(df) < 50:
+            return False, None
+        if rs_rank < RS_MIN:
+            return False, None
+
+        listing_date  = datetime.strptime(listing_date_str, '%Y-%m-%d')
+        months_listed = (datetime.today() - listing_date).days / 30.44
+        if months_listed > MAX_MONTHS or months_listed < 0:
+            return False, None
+
+        c    = df['Close'].squeeze()
+        h    = df['High'].squeeze()
+        lo   = df['Low'].squeeze()
+        v    = df['Volume'].squeeze()
+        curr = float(c.iloc[-1])
+        ath  = float(h.max())
+
+        pct_from_ath = (curr / ath - 1) * 100
+        if pct_from_ath < -(ATH_PROXIMITY * 100):
+            return False, None
+
+        if len(c) >= 50:
+            ma50 = float(c.rolling(50).mean().iloc[-1])
+            if curr < ma50:
+                return False, None
+
+        # Weekly pivot — highest weekly high over last LOOK_BACK_W weeks
+        try:
+            df_w = df.resample('W').agg({'High': 'max', 'Low': 'min', 'Close': 'last'})
+            weekly_pivot = float(df_w['High'].iloc[-LOOK_BACK_W:].max())
+        except Exception:
+            # Fallback for MultiIndex columns: use daily highs of last N*5 days
+            weekly_pivot = float(h.iloc[-LOOK_BACK_W * 5:].max())
+        pct_from_w_pivot  = round((curr / weekly_pivot - 1) * 100, 1)
+
+        if not (PIVOT_BELOW <= pct_from_w_pivot <= PIVOT_ABOVE):
+            return False, None
+
+        # Base stats (informational — not a pass/fail here)
+        window    = min(60, len(df) - 1)
+        base_h    = float(h.iloc[-window:].max())
+        base_l    = float(lo.iloc[-window:].min())
+        base_range = round((base_h - base_l) / base_l * 100, 1) if base_l > 0 else None
+
+        pre_start = max(0, len(df) - window * 2)
+        pre_end   = max(0, len(df) - window)
+        pre_vol   = float(v.iloc[pre_start:pre_end].mean()) if pre_end > pre_start else None
+        base_vol  = float(v.iloc[-window:].mean())
+        base_vol_ratio = round(base_vol / pre_vol, 2) if pre_vol and pre_vol > 0 else None
+
+        tight_window  = min(10, window)
+        tight_h       = float(h.iloc[-tight_window:].max())
+        tight_l       = float(lo.iloc[-tight_window:].min())
+        tight_range   = round((tight_h - tight_l) / tight_l * 100, 1) if tight_l > 0 else None
+
+        return True, {
+            'pct_from_ath'         : round(pct_from_ath, 1),
+            'weekly_pivot'         : round(weekly_pivot, 2),
+            'pct_from_weekly_pivot': pct_from_w_pivot,
+            'base_range_pct'       : base_range,
+            'tight_range_pct'      : tight_range,
+            'base_days'            : window,
+            'months_listed'        : round(months_listed, 1),
+            'base_vol_ratio'       : base_vol_ratio,
+        }
+    except Exception:
+        return False, None
+
+
+def detect_weekly_hl_pivot(df, rs_rank=0):
+    """
+    Weekly Higher Low pivot — exact match for TradingView "Pivot Points High Low" indicator:
+        leftLenL = 10, rightLenL = 10  (ta.pivotlow(10, 10))
+
+    A weekly bar at index i is a confirmed pivot low when:
+      - its Low is strictly less than every one of the 10 bars to its left, AND
+      - its Low is strictly less than every one of the 10 bars to its right.
+
+    The signal fires at bar i + 10 (TradingView draws the label rightLen bars back).
+
+    Filter: confirmation fired within the last 2 weekly bars (user setting).
+    Also requires: the confirmed pivot low is a Higher Low vs the previous confirmed pivot low.
+
+    Additional quality gates:
+      - Price above daily MA50 (uptrend intact)
+      - RS rank >= 60
+      - Current price above the recent HL (not broken down through support)
+    """
+    LEFT   = 10
+    RIGHT  = 10
+    RS_MIN = 60
+    # "Last 4 weeks" = confirmation bar is one of the last 4 weekly candles
+    MAX_CONFIRMATION_AGE = 4
+
+    try:
+        if rs_rank < RS_MIN or len(df) < 150:
+            return False, None
+
+        c    = df['Close'].squeeze()
+        curr = float(c.iloc[-1])
+
+        if len(c) >= 50:
+            ma50 = float(c.rolling(50).mean().iloc[-1])
+            if curr < ma50:
+                return False, None
+
+        # Resample to weekly — flatten MultiIndex columns if needed
+        import pandas as pd
+        df_flat = df.copy()
+        if isinstance(df_flat.columns, pd.MultiIndex):
+            df_flat.columns = [col[0] for col in df_flat.columns]
+        df_w = df_flat.resample('W').agg({'High': 'max', 'Low': 'min', 'Close': 'last'})
+
+        # Need at least LEFT + RIGHT + 1 bars to detect any pivot, plus some history
+        if len(df_w) < LEFT + RIGHT + 5:
+            return False, None
+
+        w_lows  = df_w['Low'].values
+        w_highs = df_w['High'].values
+        n       = len(w_lows)
+
+        def is_pivot_low(i):
+            """True if bar i is a ta.pivotlow(LEFT, RIGHT) pivot — strictly less than all surrounding bars."""
+            if i - LEFT < 0 or i + RIGHT >= n:
+                return False
+            pivot_val = w_lows[i]
+            for j in range(i - LEFT, i):
+                if w_lows[j] <= pivot_val:
+                    return False
+            for j in range(i + 1, i + RIGHT + 1):
+                if w_lows[j] <= pivot_val:
+                    return False
+            return True
+
+        def is_pivot_high(i):
+            """True if bar i is a ta.pivothigh(LEFT, RIGHT) pivot — strictly greater than all surrounding bars."""
+            if i - LEFT < 0 or i + RIGHT >= n:
+                return False
+            pivot_val = w_highs[i]
+            for j in range(i - LEFT, i):
+                if w_highs[j] >= pivot_val:
+                    return False
+            for j in range(i + 1, i + RIGHT + 1):
+                if w_highs[j] >= pivot_val:
+                    return False
+            return True
+
+        # Confirmation bar index range for "last 2 weekly bars"
+        # Confirmation of pivot at bar i happens at bar i + RIGHT
+        # So: i + RIGHT >= n - MAX_CONFIRMATION_AGE  AND  i + RIGHT <= n - 1
+        # → n - RIGHT - MAX_CONFIRMATION_AGE <= i <= n - RIGHT - 1
+        min_i = n - RIGHT - MAX_CONFIRMATION_AGE
+        max_i = n - RIGHT - 1
+
+        # Find all confirmed pivot lows in history (to identify the previous HL)
+        all_pivot_lows = []
+        for i in range(LEFT, n - RIGHT):
+            if is_pivot_low(i):
+                all_pivot_lows.append((i, float(w_lows[i])))
+
+        if len(all_pivot_lows) < 2:
+            return False, None
+
+        # The most recent confirmed pivot low must be within the "last 2 weeks" window
+        recent_hl = all_pivot_lows[-1]
+        if not (min_i <= recent_hl[0] <= max_i):
+            return False, None
+
+        prev_hl = all_pivot_lows[-2]
+
+        # Must be a Higher Low (strictly above previous pivot low)
+        if recent_hl[1] <= prev_hl[1]:
+            return False, None
+
+        # Current price must be above the recent HL (hasn't broken down)
+        if curr < recent_hl[1]:
+            return False, None
+
+        # How many weeks ago was the confirmation? (0 = confirmed this week, 1 = last week)
+        confirmation_bar  = recent_hl[0] + RIGHT
+        confirmation_age  = (n - 1) - confirmation_bar
+
+        pct_above_hl  = round((curr / recent_hl[1] - 1) * 100, 1)
+        hl_step_pct   = round((recent_hl[1] / prev_hl[1] - 1) * 100, 1)
+
+        # Most recent confirmed pivot high (for target / resistance)
+        all_pivot_highs = [(i, float(w_highs[i])) for i in range(LEFT, n - RIGHT) if is_pivot_high(i)]
+        recent_hh     = all_pivot_highs[-1][1] if all_pivot_highs else float(df_w['High'].max())
+        pct_from_hh   = round((curr / recent_hh - 1) * 100, 1)
+
+        return True, {
+            'weekly_hl'            : round(recent_hl[1], 2),
+            'prev_weekly_hl'       : round(prev_hl[1], 2),
+            'hl_step_pct'          : hl_step_pct,
+            'weekly_hl_age_wks'    : confirmation_age,   # 0 = confirmed this week, 1 = last week
+            'pct_above_hl'         : pct_above_hl,
+            'weekly_hh'            : round(recent_hh, 2),
+            'pct_from_hh'          : pct_from_hh,
+        }
+    except Exception:
+        return False, None
+
+
 def detect_hhhl(df):
     """
     Detects stocks in a confirmed uptrend (HH+HL structure) pulling back
-    to near the most recent confirmed Higher Low.
+    toward the most recent confirmed Higher Low.
+
+    Uses left=10, right=10 pivot logic — identical to the chart viewer and
+    TradingView ta.pivothigh/ta.pivotlow(10,10) so pivots match what is
+    labeled on the charts exactly.
 
     Conditions:
-      1. At least 2 confirmed pivot highs — each higher than the previous (HH)
-      2. At least 2 confirmed pivot lows  — each higher than the previous (HL)
-      3. Sequence is valid: prev_HL → prev_HH → recent_HL → recent_HH → now pulling back
-      4. Current price is 0–8% above the most recent pivot low (near the HL)
-      5. Pullback from most recent pivot high is 8–35% (healthy, not a breakdown)
-      6. Price is above MA50 (uptrend confirmed by MA)
+      1. At least 2 confirmed pivot highs ascending (Higher Highs)
+      2. At least 2 confirmed pivot lows  ascending (Higher Lows)
+      3. Sequence: prev_HL → prev_HH → recent_HL → recent_HH → pulling back now
+      4. Current price is between the recent HL and the recent HH (in the pullback zone)
+      5. Pullback from recent HH is 5–40% (healthy correction)
+      6. Price is above MA50
     Returns (is_setup, details|None)
     """
-    PIVOT_N      = 5     # bars on each side to confirm a swing pivot
-    LOOKBACK     = 150   # bars of history to scan
-    NEAR_HL_MAX  = 8.0   # max % above the recent HL
-    PB_MIN       = 8.0   # min pullback % from recent HH
-    PB_MAX       = 35.0  # max pullback % from recent HH
+    LEFT  = 10   # bars on each side — matches chart viewer find_pivot_highs/lows
+    RIGHT = 10
+    LOOKBACK = 200
+    PB_MIN   = 5.0    # min pullback % from recent HH (relaxed — catches earlier setups)
+    PB_MAX   = 40.0   # max pullback % (allow deeper corrections in strong uptrends)
 
-    if len(df) < LOOKBACK + PIVOT_N * 2:
+    if len(df) < LOOKBACK:
         return False, None
     try:
-        recent  = df.iloc[-LOOKBACK:]
-        highs   = recent['High'].values
-        lows    = recent['Low'].values
-        closes  = recent['Close'].values
-        n       = len(recent)
+        src   = df.iloc[-LOOKBACK:].copy()
+        highs = src['High'].values.astype(float)
+        lows  = src['Low'].values.astype(float)
+        closes= src['Close'].values.astype(float)
+        n     = len(src)
 
-        # Find all confirmed pivot highs and lows
+        # Find all confirmed pivot highs using same logic as chart viewer (left=10, right=10)
         pivot_highs, pivot_lows = [], []
-        for i in range(PIVOT_N, n - PIVOT_N):
-            if highs[i] == max(highs[i - PIVOT_N: i + PIVOT_N + 1]):
+        for i in range(LEFT, n - RIGHT):
+            win_h = highs[i - LEFT: i + RIGHT + 1]
+            wmax  = float(np.max(win_h))
+            if float(highs[i]) == wmax and np.sum(win_h == wmax) == 1:
                 pivot_highs.append((i, float(highs[i])))
-            if lows[i]  == min(lows[i  - PIVOT_N: i + PIVOT_N + 1]):
+
+            win_l = lows[i - LEFT: i + RIGHT + 1]
+            wmin  = float(np.min(win_l))
+            if float(lows[i]) == wmin and np.sum(win_l == wmin) == 1:
                 pivot_lows.append((i, float(lows[i])))
 
         if len(pivot_highs) < 2 or len(pivot_lows) < 2:
@@ -997,33 +1576,37 @@ def detect_hhhl(df):
         if pl_last <= pl_prev:
             return False, None
 
-        # Sequence check: prev_HL → prev_HH → recent_HL → recent_HH
-        # i.e. pl_prev before ph_prev, ph_prev before pl_last, pl_last before ph_last
+        # Sequence check: prev_HL → prev_HH → recent_HL → recent_HH (left to right)
         if not (pl_prev_idx < ph_prev_idx < pl_last_idx < ph_last_idx):
             return False, None
 
-        curr = float(closes[-1])
+        # Use last valid (non-NaN) close — today's bar may be incomplete
+        valid_closes = closes[~np.isnan(closes)]
+        if len(valid_closes) == 0:
+            return False, None
+        curr = float(valid_closes[-1])
 
         # Price must be above MA50
         ma50_val = float(df['Close'].iloc[-50:].mean()) if len(df) >= 50 else None
         if ma50_val is None or curr < ma50_val:
             return False, None
 
-        # Near the recent Higher Low (0–8% above it)
-        pct_from_hl = (curr - pl_last) / pl_last * 100.0
-        if not (0.0 <= pct_from_hl <= NEAR_HL_MAX):
-            return False, None
+        # Price must be in the pullback zone: between recent HL and recent HH
+        if curr < pl_last:
+            return False, None   # broke below HL — not a pullback, potential breakdown
 
-        # Healthy pullback from the recent Higher High (8–35%)
+        # Healthy pullback from the recent Higher High (5–40%)
         pullback = (ph_last - curr) / ph_last * 100.0
         if not (PB_MIN <= pullback <= PB_MAX):
             return False, None
 
+        pct_from_hl = (curr - pl_last) / pl_last * 100.0
+
         return True, {
-            'hhhl_hh':          round(ph_last, 2),
-            'hhhl_hl':          round(pl_last, 2),
+            'hhhl_hh':           round(ph_last, 2),
+            'hhhl_hl':           round(pl_last, 2),
             'hhhl_pullback_pct': round(pullback, 1),
-            'hhhl_pct_from_hl': round(pct_from_hl, 1),
+            'hhhl_pct_from_hl':  round(pct_from_hl, 1),
         }
     except Exception:
         return False, None
@@ -1126,13 +1709,17 @@ def build_entry(sym, ev, extra=None):
         'tv_symbol':     'NSE:' + ticker,
         'price':         round(ev['price'], 2),
         'rs_rank':       int(ev['rs_rank']),
+        'ma20':          round(ev['ma20'], 2) if ev.get('ma20') else None,
         'ma50':          round(ev['ma50'], 2),
         'ma150':         round(ev['ma150'], 2),
         'ma200':         round(ev['ma200'], 2),
         'hi52':          round(ev['hi52'], 2),
         'lo52':          round(ev['lo52'], 2),
+        'ath':           round(ev['ath'], 2) if ev.get('ath') else None,
         'pct_from_high':  round(ev['pct_from_high'], 1),
         'pct_above_low':  round(ev['pct_above_low'], 1),
+        'pct_from_ath':   round(ev['pct_from_ath'], 1) if ev.get('pct_from_ath') is not None else None,
+        'pct_from_ma20':  ev.get('pct_from_ma20'),
         'vol_ratio':      round(ev['vol_ratio'], 2),
         'passed':         ev['passed'],
         'criteria':       ev['criteria'],
@@ -1149,6 +1736,7 @@ def build_entry(sym, ev, extra=None):
         'pct_from_pivot_w': ev.get('pct_from_pivot_w'),
         'vcp_last_daily':   ev.get('vcp_last_daily'),
         'vcp_last_weekly':  ev.get('vcp_last_weekly'),
+        'rs_trending_up':   ev.get('rs_trending_up', False),
     }
     if extra:
         e.update(extra)
@@ -2730,9 +3318,19 @@ def run():
             'group': 'composite', 'stocks': []
         },
         'minervini_backtest': {
-            'label': 'Minervini Backtest Picks (30% CAGR)',
-            'desc':  'Exact 30% CAGR strategy entry signal: all 8 criteria + VCP 3-segment base + volume surge ≥1.25× 50-day avg + within 20% of 52-week high. Stop at base low ×0.995 or 8% max. Breakeven at +10%, trail MA50 at +15%.',
+            'label': 'Minervini Backtest Picks (V4 Optimal)',
+            'desc':  'V4 optimised entry signal (CAGR 29%, Calmar 1.16): all 8 criteria + VCP 3-segment base + RS≥83 + volume surge ≥1.5× 50-day avg + within 20% of 52-week high. Risk 2% of portfolio, 8% structural stop.',
             'group': 'composite', 'stocks': []
+        },
+        'breakout_alert': {
+            'label': '🔔 VCP Breakout Alerts',
+            'desc':  'Real-time VCP breakout signals with full trade details. BREAKOUT = pivot crossed today with 1.5×+ volume. WATCHLIST = within 5% of pivot, ready to fire. Entry, stop, position size and ₹ risk based on ₹20L portfolio at 2% risk per trade.',
+            'group': 'alert', 'stocks': []
+        },
+        'v4_live_signal': {
+            'label': '⚡ V4 Live Trade Signals',
+            'desc':  'Live entry signals using the exact same logic as the V4 SEPA backtest (CAGR 29%, Calmar 1.16). Full 8-criteria trend template + zigzag VCP detection (2–6 contractions, vol dry-up) + RS≥83 + vol≥1.5×. Structural stop from VCP last swing low. Position sizing: ₹20L / 2% risk = ₹40K. Pyramid plan and stop management targets included.',
+            'group': 'alert', 'stocks': []
         },
         'new_highs': {
             'label': 'New 52-Week Highs (within 2%)',
@@ -2768,6 +3366,26 @@ def run():
             'label': 'HH/HL Pullback',
             'desc':  'Stock in a confirmed uptrend (higher highs + higher lows) with price pulling back to near the most recent Higher Low. Clean trend-continuation entry — buy the dip into support.',
             'group': 'htf', 'stocks': []
+        },
+        'weekly_hl_pivot': {
+            'label': '📈 Weekly Higher Low',
+            'desc':  'Stocks that recently printed a new confirmed Higher Low pivot on the weekly chart — each dip bought at a higher price. The clearest sign of sustained institutional accumulation. Minervini: "A series of higher lows tells you who is in control." RS ≥ 60, above MA50, HL confirmed within last 10 weeks.',
+            'group': 'htf', 'stocks': []
+        },
+        'high_ma20': {
+            'label': '🎯 Near High & 20MA',
+            'desc':  'Stocks within 8% of their 52-week high (or 10% of all-time high) AND price is within 5% of the 20-day MA — classic Minervini pullback-to-20MA setup near highs. Price hugging the 20MA in a strong uptrend, no deep base needed. Sorted by proximity to MA20.',
+            'group': 'htf', 'stocks': []
+        },
+        'ipo_base': {
+            'label': '🚀 IPO Base',
+            'desc':  'Minervini True IPO Base: listed within 18 months, within 15% of ATH, base range < 20% (tight), volume dry-up (base vol < 80% of pre-base), price above MA21 & MA50, RS ≥ 60. The cleanest setup — zero overhead supply, first institutional accumulation, no one trapped above.',
+            'group': 'ipo', 'stocks': []
+        },
+        'ipo_near_pivot': {
+            'label': '🎯 IPO Near Pivot',
+            'desc':  'Recent IPOs (≤18 months) sitting within 5% of their weekly pivot buy point — the exact Minervini entry zone. Broader than IPO Base (relaxed base criteria) but strict on pivot proximity. These are the actionable setups: price coiling just below the weekly high, ready to trigger on volume.',
+            'group': 'ipo', 'stocks': []
         },
         'primary_base_new': {
             'label': 'Primary Base — Recent IPO (≤3 yrs)',
@@ -3001,11 +3619,167 @@ def run():
                 screens['vcp_setup']['stocks'].append(
                     build_entry(sym, ev, {'vcp': True, 'added_date': full_since})
                 )
-                # Backtest-exact entry: VCP + volume surge ≥1.25× + within 20% of high (30% CAGR params)
-                if ev['vol_ratio'] >= 1.25 and ev['pct_from_high'] >= -20.0:
+                # V4-optimised entry: RS≥83, Vol≥1.5×, within 20% of 52W high
+                if ev['vol_ratio'] >= 1.5 and ev.get('rs_rank', 0) >= 83 and ev['pct_from_high'] >= -20.0:
                     screens['minervini_backtest']['stocks'].append(
                         build_entry(sym, ev, {'vcp': True, 'vol_surge': True, 'added_date': full_since})
                     )
+
+                # ── VCP Breakout Alert ────────────────────────────────────────
+                # Fires for RS≥83 stocks: either breaking out NOW or near pivot
+                # Position sizing: ₹20L capital, 2% risk/trade = ₹40,000 risk
+                # Stop: structural VCP base low (clamped 5–10%), same as V4 backtest
+                _ALERT_CAPITAL = 2_000_000  # ₹20 Lakhs
+                _ALERT_RISK    = 40_000     # 2% of ₹20L
+
+                if ev.get('rs_rank', 0) >= 83:
+                    _piv = ev.get('pivot_high')
+                    if _piv and _piv > 0:
+                        _alert_type  = None
+                        _entry_price = None
+                        _note        = ''
+
+                        # BREAKOUT: pivot crossed today with volume ≥1.5× average
+                        if ev.get('pivot_crossed') and ev['vol_ratio'] >= 1.5:
+                            _alert_type  = 'BREAKOUT'
+                            _entry_price = round(ev['price'] * 1.005, 2)
+                            _note = 'Pivot crossed! Vol {:.1f}× avg — enter now'.format(ev['vol_ratio'])
+
+                        # WATCHLIST: within 5% below pivot, not yet crossed
+                        elif (ev.get('pct_from_pivot') is not None
+                              and -5.0 <= ev['pct_from_pivot'] <= 0):
+                            _alert_type  = 'WATCHLIST'
+                            _entry_price = round(_piv * 1.005, 2)
+                            _note = '{:.1f}% below pivot — watch for breakout with vol surge'.format(
+                                abs(ev['pct_from_pivot']))
+
+                        if _alert_type and _entry_price and _entry_price > 0:
+                            # Structural stop: lowest low of the VCP base (since pivot formed)
+                            # Same logic as V4 backtest — use VCP swing low, clamp 5–10%
+                            try:
+                                _piv_bars = max(15, min(80, int(ev.get('pivot_bars_ago') or 40)))
+                                _base_low = float(df['Low'].squeeze().iloc[-_piv_bars:].min()) * 0.995
+                                _stop_pct_raw = (_entry_price - _base_low) / _entry_price
+                                _stop_pct_actual = max(0.05, min(0.10, _stop_pct_raw))
+                            except Exception:
+                                _stop_pct_actual = 0.08
+                            _stop_price = round(_entry_price * (1 - _stop_pct_actual), 2)
+                            _rps        = _entry_price - _stop_price
+                            _shares     = max(1, int(_ALERT_RISK / _rps)) if _rps > 0 else 0
+                            _pos_inr    = round(_shares * _entry_price)
+                            _risk_inr   = round(_shares * _rps)
+
+                            # Pyramid add price targets (V4 trade journal logic)
+                            _pyr1_price = round(_entry_price * 1.15, 2)  # +15%: add 50% more
+                            _pyr2_price = round(_entry_price * 1.30, 2)  # +30%: add 25% more
+                            _pyr3_price = round(_entry_price * 1.50, 2)  # +50%: add 12.5% more
+
+                            # Stop management targets (V4: 3R→BE, 4R→trail+1R)
+                            _r3_price   = round(_entry_price + 3.0 * _rps, 2)
+                            _r4_price   = round(_entry_price + 4.0 * _rps, 2)
+                            _trail_stop = round(_entry_price + 1.0 * _rps, 2)  # stop after 4R hit
+
+                            screens['breakout_alert']['stocks'].append(
+                                build_entry(sym, ev, {
+                                    'vcp':             True,
+                                    'alert_type':      _alert_type,
+                                    'entry_price':     _entry_price,
+                                    'stop_price':      _stop_price,
+                                    'stop_pct':        round(_stop_pct_actual * 100, 1),
+                                    'shares':          _shares,
+                                    'position_inr':    _pos_inr,
+                                    'risk_inr':        _risk_inr,
+                                    'alert_note':      _note,
+                                    'rs_trending_up':  ev.get('rs_trending_up', False),
+                                    'pyr1_price':      _pyr1_price,
+                                    'pyr2_price':      _pyr2_price,
+                                    'pyr3_price':      _pyr3_price,
+                                    'r3_price':        _r3_price,
+                                    'r4_price':        _r4_price,
+                                    'trail_stop':      _trail_stop,
+                                    'added_date':      full_since,
+                                })
+                            )
+
+            # ── V4 Live Trade Signal ─────────────────────────────────────────
+            # Runs independently of the simple 3-segment VCP check above.
+            # Uses the full zigzag detect_vcp_v4 (same as backtest_sepa_faithful).
+            # All 8 TT + RS≥83 + zigzag VCP (2-6C, vol dry-up) + within 20% of 52W high
+            if ev.get('rs_rank', 0) >= 83 and ev.get('pct_from_high', -100) >= -20.0:
+                _v4vcp = detect_vcp_v4(df,
+                    pivot_high=ev.get('pivot_high'),
+                    pivot_bars_ago=ev.get('pivot_bars_ago'))
+                if _v4vcp is not None and _v4vcp['quality'] >= 6:
+                    _v4_vol_ratio = ev['vol_ratio']
+                    _v4_piv       = _v4vcp['pivot']
+                    _v4_price     = ev['price']
+                    _v4_ev_piv    = ev.get('pivot_high') or _v4_piv
+
+                    _v4_signal_type = None
+                    _v4_entry_price = None
+                    _v4_note        = ''
+
+                    if _v4_price > _v4_ev_piv and _v4_vol_ratio >= 1.5:
+                        _v4_signal_type = 'BREAKOUT'
+                        _v4_entry_price = round(_v4_price * 1.005, 2)
+                        _v4_note = ('Pivot ₹{:.2f} crossed! Vol {:.1f}× avg | Q{} | {}C | {:.1f}% base'
+                                    .format(_v4_ev_piv, _v4_vol_ratio, _v4vcp['quality'],
+                                            _v4vcp['n_contractions'], _v4vcp['base_depth']))
+                    elif _v4_price >= _v4_ev_piv * 0.93 and _v4_price <= _v4_ev_piv:
+                        _pct_below = (_v4_ev_piv - _v4_price) / _v4_ev_piv * 100
+                        _v4_signal_type = 'SETUP'
+                        _v4_entry_price = round(_v4_ev_piv * 1.005, 2)
+                        _v4_note = ('{:.1f}% below pivot ₹{:.2f} | Vol {:.1f}× | Q{} | {}C | {:.1f}% base'
+                                    .format(_pct_below, _v4_ev_piv, _v4_vol_ratio,
+                                            _v4vcp['quality'], _v4vcp['n_contractions'],
+                                            _v4vcp['base_depth']))
+
+                    if _v4_signal_type and _v4_entry_price and _v4_entry_price > 0:
+                        _v4_last_low     = _v4vcp['last_low']
+                        _v4_stop_pct_raw = (_v4_entry_price - _v4_last_low * 0.995) / _v4_entry_price
+                        _v4_stop_pct     = max(0.05, min(0.10, _v4_stop_pct_raw))
+                        _v4_stop_price   = round(_v4_entry_price * (1 - _v4_stop_pct), 2)
+                        _v4_rps          = _v4_entry_price - _v4_stop_price
+
+                        _V4_RISK = 40_000
+                        _v4_shares   = max(1, int(_V4_RISK / _v4_rps)) if _v4_rps > 0 else 0
+                        _v4_pos_inr  = round(_v4_shares * _v4_entry_price)
+                        _v4_risk_inr = round(_v4_shares * _v4_rps)
+
+                        _v4_pyr1 = round(_v4_entry_price * 1.15, 2)
+                        _v4_pyr2 = round(_v4_entry_price * 1.30, 2)
+                        _v4_pyr3 = round(_v4_entry_price * 1.50, 2)
+                        _v4_r3_price   = round(_v4_entry_price + 3.0 * _v4_rps, 2)
+                        _v4_r4_price   = round(_v4_entry_price + 4.0 * _v4_rps, 2)
+                        _v4_trail_stop = round(_v4_entry_price + 1.0 * _v4_rps, 2)
+
+                        screens['v4_live_signal']['stocks'].append(
+                            build_entry(sym, ev, {
+                                'vcp':              True,
+                                'signal_type':      _v4_signal_type,
+                                'signal_note':      _v4_note,
+                                'entry_price':      _v4_entry_price,
+                                'stop_price':       _v4_stop_price,
+                                'stop_pct':         round(_v4_stop_pct * 100, 1),
+                                'stop_from_low':    round(_v4_last_low, 2),
+                                'shares':           _v4_shares,
+                                'position_inr':     _v4_pos_inr,
+                                'risk_inr':         _v4_risk_inr,
+                                'rs_trending_up':   ev.get('rs_trending_up', False),
+                                'vcp_quality':      _v4vcp['quality'],
+                                'vcp_contractions': _v4vcp['n_contractions'],
+                                'vcp_base_depth':   _v4vcp['base_depth'],
+                                'vcp_accum':        _v4vcp['accum_ratio'],
+                                'pyr1_price':       _v4_pyr1,
+                                'pyr2_price':       _v4_pyr2,
+                                'pyr3_price':       _v4_pyr3,
+                                'r3_price':         _v4_r3_price,
+                                'r4_price':         _v4_r4_price,
+                                'trail_stop':       _v4_trail_stop,
+                                'pivot_price':      round(_v4_piv, 2),
+                                'added_date':       full_since,
+                            })
+                        )
 
         elif ev['passed'] == 7:
             failed = [k for k, v in cr.items() if not v]
@@ -3070,8 +3844,49 @@ def run():
                 build_entry(sym, ev, {'added_date': today_str, **(_hhhl_det or {})})
             )
 
-        # ── Primary Base ─────────────────────────────────────────────────────
+        # ── Weekly Higher Low Pivot ───────────────────────────────────────────
+        _whl_ok, _whl_det = detect_weekly_hl_pivot(df, rs_rank=ev.get('rs_rank', 0))
+        if _whl_ok:
+            screens['weekly_hl_pivot']['stocks'].append(
+                build_entry(sym, ev, {'added_date': today_str, **(_whl_det or {})})
+            )
+
+        # ── Near High & 20MA ─────────────────────────────────────────────────
+        # Stocks within 8% of 52W high (or 10% of ATH) AND within 5% of MA20.
+        # Minimum trend structure: C1+C4+C5 (price above all MAs, MA stack intact).
+        _pct_h   = ev.get('pct_from_high', -999)
+        _pct_ath = ev.get('pct_from_ath',  -999)
+        _pct_m20 = ev.get('pct_from_ma20')
+        _cr      = ev.get('criteria', {})
+        _near_high  = _pct_h >= -8.0 or _pct_ath >= -10.0
+        _near_ma20  = _pct_m20 is not None and -3.0 <= _pct_m20 <= 5.0
+        _uptrend_ok = _cr.get('c1') and _cr.get('c4') and _cr.get('c5')
+        if _near_high and _near_ma20 and _uptrend_ok:
+            _near_ath_flag = _pct_ath is not None and _pct_ath >= -10.0
+            screens['high_ma20']['stocks'].append(
+                build_entry(sym, ev, {
+                    'added_date':   today_str,
+                    'near_ath':     _near_ath_flag,
+                    'pct_from_ath': round(_pct_ath, 1) if _pct_ath is not None else None,
+                })
+            )
+
+        # ── IPO Base (strict: ≤18 months, range<20%, vol dry-up) ────────────
         _ld = _listing_dates.get(sym)
+        _ipo_base_ok, _ipo_base_det = detect_ipo_base(df, _ld, rs_rank=ev.get('rs_rank', 0))
+        if _ipo_base_ok:
+            screens['ipo_base']['stocks'].append(
+                build_entry(sym, ev, {'added_date': today_str, **(_ipo_base_det or {})})
+            )
+
+        # ── IPO Near Pivot (actionable: ≤18 months, within 5% of weekly pivot) ─
+        _ipo_piv_ok, _ipo_piv_det = detect_ipo_near_pivot(df, _ld, rs_rank=ev.get('rs_rank', 0))
+        if _ipo_piv_ok:
+            screens['ipo_near_pivot']['stocks'].append(
+                build_entry(sym, ev, {'added_date': today_str, **(_ipo_piv_det or {})})
+            )
+
+        # ── Primary Base ─────────────────────────────────────────────────────
         _pb_new_ok,  _pb_new_det  = detect_primary_base(df, _ld, max_years=3)
         _pb_10yr_ok, _pb_10yr_det = detect_primary_base(df, _ld, max_years=10)
         if _pb_new_ok:
@@ -3409,7 +4224,7 @@ def run():
         'cci34_daily_cross_100', 'cci34_weekly_cross_100',
         'cci34_daily_100', 'cci34_daily_neg100',
         'cci34_weekly_100', 'cci34_weekly_neg100', 'cci34_best_setups',
-        'htf_setup', 'htf_potential', 'ma_pullback', 'hhhl_pullback',
+        'htf_setup', 'htf_potential', 'ma_pullback', 'hhhl_pullback', 'high_ma20',
         'primary_base_new', 'primary_base_10yr',
         'fo_momentum', 'fo_strong_uptrend', 'young_3yr', 'young_10yr',
     }
@@ -3478,6 +4293,7 @@ def run():
         ('htf_potential',         'Pot.HTF'),
         ('ma_pullback',           'MA Pullback'),
         ('hhhl_pullback',         'HH/HL'),
+        ('high_ma20',             'Near High+20MA'),
     ]
     _fo_seen   = {}   # ticker → best entry dict
     _fo_labels = {}   # ticker → [screen labels]
@@ -3530,6 +4346,7 @@ def run():
         ('htf_potential',          'Pot.HTF'),
         ('ma_pullback',            'MA Pullback'),
         ('hhhl_pullback',          'HH/HL'),
+        ('high_ma20',              'Near High+20MA'),
         ('primary_base_new',       'PrimaryBase'),
         ('primary_base_10yr',      'PrimaryBase'),
     ]
@@ -3681,6 +4498,57 @@ def run():
     _newly.sort(key=lambda e: -e.get('rs_rank', 0))
     screens['newly_added']['stocks'] = _newly
 
+    # ── MARK is_new ON ALL SCREENS ────────────────────────────────────────────
+    # Compare each screen against the previous scan's results.json so the
+    # dashboard can show a "new since last scan" subsection in every section.
+    try:
+        _prev_screens_all = _old_results.get('screens', {})
+    except (NameError, AttributeError):
+        _prev_screens_all = {}
+    for _sk, _scr in screens.items():
+        _prev_tickers = {
+            e.get('ticker', '')
+            for e in _prev_screens_all.get(_sk, {}).get('stocks', [])
+        }
+        for _e in _scr.get('stocks', []):
+            _t = _e.get('ticker', '')
+            if _t and _t not in _prev_tickers and not _e.get('is_new'):
+                _e['is_new'] = True
+
+    # ── V4 PAST TRADES (from trade journal Excel) ─────────────────────────────
+    _v4_past_trades = []
+    _v4_journal_path = os.path.expanduser('~/Downloads/SEPA_V4_Trade_Journal.xlsx')
+    try:
+        if os.path.exists(_v4_journal_path):
+            import openpyxl as _openpyxl  # noqa: F401 (just checking availability)
+            import pandas as _pd_j
+            _jdf = _pd_j.read_excel(_v4_journal_path, sheet_name='Trade Journal', header=1)
+            _cur_year = str(datetime.now().year)
+            for _, _row in _jdf.iterrows():
+                _exit_d = str(_row.get('Exit Date', '') or '')
+                _entry_d = str(_row.get('Date', '') or '')
+                if _cur_year in _exit_d or _cur_year in _entry_d:
+                    _gain_pct = _row.get('Gain %', 0)
+                    try:
+                        _gain_pct = float(_gain_pct)
+                    except Exception:
+                        _gain_pct = 0.0
+                    _v4_past_trades.append({
+                        'symbol':      str(_row.get('Symbol', '')),
+                        'entry_date':  _entry_d,
+                        'entry_price': _row.get('Price ₹', ''),
+                        'exit_date':   _exit_d,
+                        'exit_price':  _row.get('Exit ₹', ''),
+                        'days_held':   _row.get('Days Held', ''),
+                        'gain_pct':    round(_gain_pct * 100, 2),
+                        'pnl_inr':     _row.get('PnL ₹', ''),
+                        'r_mult':      _row.get('R Mult.', ''),
+                        'type':        str(_row.get('Type', '')),
+                    })
+    except Exception:
+        pass
+    screens['v4_live_signal']['past_trades'] = _v4_past_trades
+
     # ── BUILD RESULT ──────────────────────────────────────────────────────────
     result = {
         'generated_at':   datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -3712,6 +4580,35 @@ def run():
         f.write(_sanitize(json.dumps(result)))
         f.write(';')
     os.replace(tmp_js, RESULTS_JS)
+
+    # ── PATCH PRICES with live closing prices ────────────────────────────────
+    try:
+        _lp_path = os.path.join(os.path.dirname(BASE_DIR),
+                                'chart-pattern-viewer', 'live_prices.json')
+        if os.path.exists(_lp_path):
+            with open(_lp_path) as _lpf:
+                _lp = json.load(_lpf).get('prices', {})
+            if _lp:
+                _patched = 0
+                for _scr in result.get('screens', {}).values():
+                    for _s in _scr.get('stocks', []):
+                        _t = _s.get('ticker', '')
+                        if _t in _lp:
+                            _s['price'] = _lp[_t]['price']
+                            _patched += 1
+                if _patched:
+                    _tmp2j = RESULTS_JSON + '.tmp'
+                    _tmp2s = RESULTS_JS   + '.tmp'
+                    with open(_tmp2j, 'w') as _f:
+                        _f.write(_sanitize(json.dumps(result, indent=2)))
+                    os.replace(_tmp2j, RESULTS_JSON)
+                    with open(_tmp2s, 'w') as _f:
+                        _f.write('window.SCAN_DATA = ')
+                        _f.write(_sanitize(json.dumps(result)))
+                        _f.write(';')
+                    os.replace(_tmp2s, RESULTS_JS)
+    except Exception:
+        pass
 
     # ── CCI HISTORY — append today's counts ──────────────────────────────────
     try:
@@ -3773,6 +4670,8 @@ def run():
     print(f"    {screens['ipo_watch']['label']:<45} {len(screens['ipo_watch']['stocks'])} stocks")
     print(f"\n  STRONG EARNINGS + CCI:")
     print(f"    {screens['strong_earnings']['label']:<45} {len(screens['strong_earnings']['stocks'])} stocks")
+    print(f"\n  NEAR HIGH & 20MA:")
+    print(f"    {screens['high_ma20']['label']:<45} {len(screens['high_ma20']['stocks'])} stocks")
     print(f"\n  PRIMARY BASE:")
     print(f"    {screens['primary_base_new']['label']:<45} {len(screens['primary_base_new']['stocks'])} stocks")
     print(f"    {screens['primary_base_10yr']['label']:<45} {len(screens['primary_base_10yr']['stocks'])} stocks")
@@ -3811,6 +4710,31 @@ def run():
                 f.write(_sanitize(json.dumps(result)))
                 f.write(';')
             os.replace(tmp_js2, RESULTS_JS)
+            # Re-patch prices after market analysis rewrite
+            try:
+                _lp_path2 = os.path.join(os.path.dirname(BASE_DIR),
+                                         'chart-pattern-viewer', 'live_prices.json')
+                if os.path.exists(_lp_path2):
+                    with open(_lp_path2) as _lpf2:
+                        _lp2 = json.load(_lpf2).get('prices', {})
+                    if _lp2:
+                        for _scr2 in result.get('screens', {}).values():
+                            for _s2 in _scr2.get('stocks', []):
+                                _t2 = _s2.get('ticker', '')
+                                if _t2 in _lp2:
+                                    _s2['price'] = _lp2[_t2]['price']
+                        _tmp3j = RESULTS_JSON + '.tmp'
+                        _tmp3s = RESULTS_JS   + '.tmp'
+                        with open(_tmp3j, 'w') as _f3:
+                            _f3.write(_sanitize(json.dumps(result, indent=2)))
+                        os.replace(_tmp3j, RESULTS_JSON)
+                        with open(_tmp3s, 'w') as _f3:
+                            _f3.write('window.SCAN_DATA = ')
+                            _f3.write(_sanitize(json.dumps(result)))
+                            _f3.write(';')
+                        os.replace(_tmp3s, RESULTS_JS)
+            except Exception:
+                pass
             print(f"  Market analysis embedded in results (regime: {market_analysis.get('regime','?')})")
             # ── CCI HISTORY — update regime now that we have it ───────────────
             try:
@@ -3836,6 +4760,17 @@ def run():
                 print(f"  CCI history regime update failed: {_rex}")
     except Exception as e:
         print(f"  [WARN] Market analysis generation failed: {e}")
+
+    # ── SCAN HISTORY RAG — auto-snapshot after every scan ────────────────────
+    try:
+        from build_history_rag import take_snapshot, append_snapshot, build_history_index
+        snap = take_snapshot(RESULTS_JSON)
+        if snap:
+            append_snapshot(snap)
+            build_history_index()
+            print(f"  Scan history RAG updated: {snap['date']} ({len(snap['stocks'])} stocks)")
+    except Exception as _hrag_ex:
+        print(f"  [WARN] Scan history RAG update failed: {_hrag_ex}")
 
 def fetch_fiidii_history_auto():
     """

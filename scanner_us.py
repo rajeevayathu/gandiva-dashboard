@@ -154,7 +154,7 @@ def load_ticker(sym):
         return None
 
 
-def load_all_data(symbols, max_workers=20):
+def load_all_data(symbols, max_workers=1):
     print(f"  Downloading/loading price data for {len(symbols)} stocks...", flush=True)
     data = {}
     done = 0
@@ -189,13 +189,17 @@ def build_entry_us(sym, ev, extra=None):
         'tv_symbol':     'NASDAQ:' + sym,   # dashboard will fix to correct exchange
         'price':         round(ev['price'], 2),
         'rs_rank':       int(ev['rs_rank']),
+        'ma20':          round(ev['ma20'], 2) if ev.get('ma20') else None,
         'ma50':          round(ev['ma50'], 2),
         'ma150':         round(ev['ma150'], 2),
         'ma200':         round(ev['ma200'], 2),
         'hi52':          round(ev['hi52'], 2),
         'lo52':          round(ev['lo52'], 2),
+        'ath':           round(ev['ath'], 2) if ev.get('ath') else None,
         'pct_from_high':  round(ev['pct_from_high'], 1),
         'pct_above_low':  round(ev['pct_above_low'], 1),
+        'pct_from_ath':   round(ev['pct_from_ath'], 1) if ev.get('pct_from_ath') is not None else None,
+        'pct_from_ma20':  ev.get('pct_from_ma20'),
         'vol_ratio':      round(ev['vol_ratio'], 2),
         'passed':         ev['passed'],
         'criteria':       ev['criteria'],
@@ -212,6 +216,10 @@ def build_entry_us(sym, ev, extra=None):
         'pct_from_pivot_w': ev.get('pct_from_pivot_w'),
         'vcp_last_daily':   ev.get('vcp_last_daily'),
         'vcp_last_weekly':  ev.get('vcp_last_weekly'),
+        'base_pivot':       ev.get('base_pivot'),
+        'pct_from_base_pivot': ev.get('pct_from_base_pivot'),
+        'base_wks':         ev.get('base_wks'),
+        'base_depth_pct':   ev.get('base_depth_pct'),
     }
     if extra:
         e.update(extra)
@@ -242,7 +250,7 @@ def fetch_quarterly_financials_us(syms):
 
     if to_fetch:
         print(f"  Fetching quarterly results for {len(to_fetch)} US stocks...", flush=True)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
             futures = {ex.submit(_fetch_one_qfin, sym): sym for sym in to_fetch}
             done = 0
             for fut in concurrent.futures.as_completed(futures):
@@ -260,6 +268,58 @@ def fetch_quarterly_financials_us(syms):
         if cached and cached.get('data'):
             result[sym] = cached['data']
     return result
+
+
+# ── AI THEME UNIVERSE ─────────────────────────────────────────────────────────
+AI_THEME_NAMES = {
+    # Pure AI / ML platforms
+    'NVDA','AMD','PLTR','AI','SOUN','BBAI','SMCI',
+    # AI semiconductors
+    'AVGO','AMAT','LRCX','KLAC','ASML','MU','MTSI','ONTO','FORM','COHU',
+    'ACLS','AEHR','MPWR','MRVL','ADI','TXN','QCOM','INTC','SNDK','STX','WDC',
+    # AI cloud / software / data
+    'MSFT','GOOGL','GOOG','META','AMZN','ORCL','CRM','NOW','SNOW','MDB',
+    'DDOG','NET','ZS','PANW','CRWD','FTNT','HUBS','TEAM','WDAY','VEEV',
+    'ADBE','ANSS','CDNS','SNPS','KEYS','DELL','HPQ','HPE','NTAP','PSTG',
+    # AI infrastructure / data centers / power
+    'GEV','NEE','VST','CEG','ETN','EQIX','DLR','AMT','CCI','SBAC',
+    # AI robotics / automation
+    'ROK','ISRG','AXON','HON',
+    # AI biotech / drug discovery
+    'RXRX','EXAS','ILMN','TECH',
+    # AI networking
+    'CSCO','ANET','JNPR','LITE',
+}
+
+# ── NEAR BASE PIVOT DETECTION ─────────────────────────────────────────────────
+def detect_near_base_pivot(df, curr_price):
+    """
+    Minervini weekly base pivot: highest high of the consolidation base.
+    Scans weekly bars back up to 52 weeks looking for the first window where
+    current price is within 5% below or 3% above the base peak.
+    Returns (base_pivot, base_wks, base_depth_pct) or (None, None, None).
+    """
+    try:
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.copy()
+            df.columns = df.columns.get_level_values(0)
+        w = df.resample('W').agg({'High': 'max', 'Low': 'min', 'Close': 'last'}).dropna()
+        if len(w) < 10:
+            return None, None, None
+        highs = w['High'].values
+        lows  = w['Low'].values
+        n = len(highs)
+        for lookback in range(2, min(53, n)):
+            window_h = highs[-(lookback + 1):-1]
+            peak = float(window_h.max())
+            pct = (curr_price / peak - 1) * 100
+            if -5.0 <= pct <= 3.0:
+                base_low   = float(lows[-(lookback + 1):-1].min())
+                base_depth = round((peak / base_low - 1) * 100, 1) if base_low > 0 else None
+                return round(peak, 2), lookback, base_depth
+        return None, None, None
+    except Exception:
+        return None, None, None
 
 
 # ── MAIN SCAN ─────────────────────────────────────────────────────────────────
@@ -316,6 +376,9 @@ def run_scan(max_syms=None):
         'cci34_best_setups':     {'label': 'CCI34 — Best Setups',               'desc': 'Full Template + CCI34 bullish.',      'group': 'cci34', 'stocks': []},
         'primary_base_new':  {'label': 'Primary Base — Recent IPO (≤3 yrs)',   'desc': 'Recent IPO in first tight base near ATH.', 'group': 'htf', 'stocks': []},
         'primary_base_10yr': {'label': 'Primary Base — Young Company (≤10 yrs)','desc': 'Young company in primary base.', 'group': 'htf', 'stocks': []},
+        'near_base_pivot':   {'label': 'Near Weekly Base Pivot (Minervini)',     'desc': 'Stock within 5% below or 3% above the highest high of its consolidation base — Minervini-style weekly breakout zone. Minervini trend template required.', 'group': 'composite', 'stocks': []},
+        'ai_near_pivot':     {'label': 'AI Theme — Near Weekly Base Pivot',      'desc': 'AI-themed stocks (semiconductors, cloud, data centers, power infrastructure) within 5% below or 3% above their weekly consolidation base pivot.', 'group': 'composite', 'stocks': []},
+        'high_ma20':         {'label': '🎯 Near High & 20MA',                    'desc': 'Stocks within 8% of 52-week high (or 10% of ATH) AND price within 5% of the 20-day MA — classic Minervini pullback-to-20MA setup near highs. Sorted by closeness to MA20.', 'group': 'htf', 'stocks': []},
     }
 
     # ── LISTING DATES ─────────────────────────────────────────────────────────
@@ -410,6 +473,19 @@ def run_scan(max_syms=None):
         if hhhl_ok:
             screens['hhhl_pullback']['stocks'].append(build_entry_us(sym, ev, {'added_date': today_str, **(hhhl_det or {})}))
 
+        # Near High & 20MA
+        _pct_h   = ev.get('pct_from_high', -999)
+        _pct_ath = ev.get('pct_from_ath',  -999)
+        _pct_m20 = ev.get('pct_from_ma20')
+        _cr      = ev.get('criteria', {})
+        if (_pct_h >= -8.0 or _pct_ath >= -10.0) and \
+           (_pct_m20 is not None and -3.0 <= _pct_m20 <= 5.0) and \
+           _cr.get('c1') and _cr.get('c4') and _cr.get('c5'):
+            screens['high_ma20']['stocks'].append(build_entry_us(sym, ev, {
+                'added_date': today_str,
+                'near_ath':   _pct_ath is not None and _pct_ath >= -10.0,
+            }))
+
         # Primary Base
         _ld = _listing_dates.get(sym)
         _pb_new_ok,  _pb_new_det  = detect_primary_base(df, _ld, max_years=3)
@@ -418,6 +494,31 @@ def run_scan(max_syms=None):
             screens['primary_base_new']['stocks'].append(build_entry_us(sym, ev, {'added_date': today_str, **(_pb_new_det or {})}))
         elif _pb_10yr_ok:
             screens['primary_base_10yr']['stocks'].append(build_entry_us(sym, ev, {'added_date': today_str, **(_pb_10yr_det or {})}))
+
+        # Near Weekly Base Pivot (Minervini breakout zone)
+        try:
+            _curr = ev['price']
+            _bp, _bwks, _bdepth = detect_near_base_pivot(df, _curr)
+            if _bp is not None and ev['passed'] >= 6:
+                ev['base_pivot']           = _bp
+                ev['pct_from_base_pivot']  = round((_curr / _bp - 1) * 100, 1)
+                ev['base_wks']             = _bwks
+                ev['base_depth_pct']       = _bdepth
+                _is_breaking_out = ev['pct_from_base_pivot'] >= 0
+                _entry = build_entry_us(sym, ev, {
+                    'added_date':          today_str,
+                    'base_pivot':          _bp,
+                    'pct_from_base_pivot': ev['pct_from_base_pivot'],
+                    'base_wks':            _bwks,
+                    'base_depth_pct':      _bdepth,
+                    'base_status':         'BREAKING OUT' if _is_breaking_out else 'BUY ZONE',
+                    'ai_theme':            sym in AI_THEME_NAMES,
+                })
+                screens['near_base_pivot']['stocks'].append(_entry)
+                if sym in AI_THEME_NAMES:
+                    screens['ai_near_pivot']['stocks'].append(_entry)
+        except Exception:
+            pass
 
         # CCI
         cci_d_now, cci_d_prev = calc_cci(df, period=34, weekly=False)
