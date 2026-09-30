@@ -379,6 +379,7 @@ def run_scan(max_syms=None):
         'near_base_pivot':   {'label': 'Near Weekly Base Pivot (Minervini)',     'desc': 'Stock within 5% below or 3% above the highest high of its consolidation base — Minervini-style weekly breakout zone. Minervini trend template required.', 'group': 'composite', 'stocks': []},
         'ai_near_pivot':     {'label': 'AI Theme — Near Weekly Base Pivot',      'desc': 'AI-themed stocks (semiconductors, cloud, data centers, power infrastructure) within 5% below or 3% above their weekly consolidation base pivot.', 'group': 'composite', 'stocks': []},
         'high_ma20':         {'label': '🎯 Near High & 20MA',                    'desc': 'Stocks within 8% of 52-week high (or 10% of ATH) AND price within 5% of the 20-day MA — classic Minervini pullback-to-20MA setup near highs. Sorted by closeness to MA20.', 'group': 'htf', 'stocks': []},
+        'high_ma50':         {'label': '🎯 Near High & 50MA',                    'desc': 'Stocks within 20% of 52-week high (or 10% of ATH) AND price within 5% of the 50-day MA — the deeper Minervini pullback to institutional support. Same tests as Near High & 20MA, measured against the 50MA.', 'group': 'htf', 'stocks': []},
     }
 
     # ── LISTING DATES ─────────────────────────────────────────────────────────
@@ -482,6 +483,16 @@ def run_scan(max_syms=None):
            (_pct_m20 is not None and -3.0 <= _pct_m20 <= 5.0) and \
            _cr.get('c1') and _cr.get('c4') and _cr.get('c5'):
             screens['high_ma20']['stocks'].append(build_entry_us(sym, ev, {
+                'added_date': today_str,
+                'near_ath':   _pct_ath is not None and _pct_ath >= -10.0,
+            }))
+
+        # Near High & 50MA — deeper pullback, wider proximity (20% vs 8%)
+        _pct_m50 = ev.get('pct_from_ma50')
+        if (_pct_h >= -20.0 or _pct_ath >= -10.0) and \
+           (_pct_m50 is not None and -3.0 <= _pct_m50 <= 5.0) and \
+           _cr.get('c1') and _cr.get('c4') and _cr.get('c5'):
+            screens['high_ma50']['stocks'].append(build_entry_us(sym, ev, {
                 'added_date': today_str,
                 'near_ath':   _pct_ath is not None and _pct_ath >= -10.0,
             }))

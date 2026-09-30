@@ -3377,6 +3377,11 @@ def run():
             'desc':  'Stocks within 8% of their 52-week high (or 10% of all-time high) AND price is within 5% of the 20-day MA — classic Minervini pullback-to-20MA setup near highs. Price hugging the 20MA in a strong uptrend, no deep base needed. Sorted by proximity to MA20.',
             'group': 'htf', 'stocks': []
         },
+        'high_ma50': {
+            'label': '🎯 Near High & 50MA',
+            'desc':  'Stocks within 20% of their 52-week high (or 10% of all-time high) AND price is within 5% of the 50-day MA — the deeper Minervini pullback. Identical proximity and trend tests to Near High & 20MA, measured against the 50MA instead: a stock resetting to institutional support rather than hugging its short-term average. Use the sort dropdown to rank by closeness to MA50.',
+            'group': 'htf', 'stocks': []
+        },
         'ipo_base': {
             'label': '🚀 IPO Base',
             'desc':  'Minervini True IPO Base: listed within 18 months, within 15% of ATH, base range < 20% (tight), volume dry-up (base vol < 80% of pre-base), price above MA21 & MA50, RS ≥ 60. The cleanest setup — zero overhead supply, first institutional accumulation, no one trapped above.',
@@ -3861,9 +3866,29 @@ def run():
         _near_high  = _pct_h >= -8.0 or _pct_ath >= -10.0
         _near_ma20  = _pct_m20 is not None and -3.0 <= _pct_m20 <= 5.0
         _uptrend_ok = _cr.get('c1') and _cr.get('c4') and _cr.get('c5')
+        _near_ath_flag = _pct_ath is not None and _pct_ath >= -10.0
         if _near_high and _near_ma20 and _uptrend_ok:
-            _near_ath_flag = _pct_ath is not None and _pct_ath >= -10.0
             screens['high_ma20']['stocks'].append(
+                build_entry(sym, ev, {
+                    'added_date':   today_str,
+                    'near_ath':     _near_ath_flag,
+                    'pct_from_ath': round(_pct_ath, 1) if _pct_ath is not None else None,
+                })
+            )
+
+        # ── Near High & 50MA ─────────────────────────────────────────────────
+        # Same proximity and trend tests as the 20MA screen above, measured
+        # against the 50-day MA — the deeper pullback, where a stock resets to
+        # institutional support instead of riding its short-term average.
+        # Wider proximity than the 20MA screen: a pullback to the 50-day can
+        # legitimately sit further off the high, so this accepts up to 20%
+        # below the 52-week high (its own test — _near_high stays at 8% for
+        # the 20MA screen above).
+        _pct_m50     = ev.get('pct_from_ma50')
+        _near_ma50   = _pct_m50 is not None and -3.0 <= _pct_m50 <= 5.0
+        _near_high50 = _pct_h >= -20.0 or _pct_ath >= -10.0
+        if _near_high50 and _near_ma50 and _uptrend_ok:
+            screens['high_ma50']['stocks'].append(
                 build_entry(sym, ev, {
                     'added_date':   today_str,
                     'near_ath':     _near_ath_flag,
@@ -4224,7 +4249,7 @@ def run():
         'cci34_daily_cross_100', 'cci34_weekly_cross_100',
         'cci34_daily_100', 'cci34_daily_neg100',
         'cci34_weekly_100', 'cci34_weekly_neg100', 'cci34_best_setups',
-        'htf_setup', 'htf_potential', 'ma_pullback', 'hhhl_pullback', 'high_ma20',
+        'htf_setup', 'htf_potential', 'ma_pullback', 'hhhl_pullback', 'high_ma20', 'high_ma50',
         'primary_base_new', 'primary_base_10yr',
         'fo_momentum', 'fo_strong_uptrend', 'young_3yr', 'young_10yr',
     }
@@ -4294,6 +4319,7 @@ def run():
         ('ma_pullback',           'MA Pullback'),
         ('hhhl_pullback',         'HH/HL'),
         ('high_ma20',             'Near High+20MA'),
+        ('high_ma50',             'Near High+50MA'),
     ]
     _fo_seen   = {}   # ticker → best entry dict
     _fo_labels = {}   # ticker → [screen labels]
@@ -4347,6 +4373,7 @@ def run():
         ('ma_pullback',            'MA Pullback'),
         ('hhhl_pullback',          'HH/HL'),
         ('high_ma20',              'Near High+20MA'),
+        ('high_ma50',              'Near High+50MA'),
         ('primary_base_new',       'PrimaryBase'),
         ('primary_base_10yr',      'PrimaryBase'),
     ]
@@ -4670,8 +4697,9 @@ def run():
     print(f"    {screens['ipo_watch']['label']:<45} {len(screens['ipo_watch']['stocks'])} stocks")
     print(f"\n  STRONG EARNINGS + CCI:")
     print(f"    {screens['strong_earnings']['label']:<45} {len(screens['strong_earnings']['stocks'])} stocks")
-    print(f"\n  NEAR HIGH & 20MA:")
+    print(f"\n  NEAR HIGH & MA:")
     print(f"    {screens['high_ma20']['label']:<45} {len(screens['high_ma20']['stocks'])} stocks")
+    print(f"    {screens['high_ma50']['label']:<45} {len(screens['high_ma50']['stocks'])} stocks")
     print(f"\n  PRIMARY BASE:")
     print(f"    {screens['primary_base_new']['label']:<45} {len(screens['primary_base_new']['stocks'])} stocks")
     print(f"    {screens['primary_base_10yr']['label']:<45} {len(screens['primary_base_10yr']['stocks'])} stocks")
