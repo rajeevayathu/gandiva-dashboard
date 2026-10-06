@@ -1,0 +1,64 @@
+# Deployment — launchd agents
+
+Three agents keep the dashboard current without anyone starting anything by
+hand. Install them with:
+
+```sh
+cp deploy/com.gandiva.*.plist ~/Library/LaunchAgents/
+for j in scanner priceupdater webserver; do
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gandiva.$j.plist
+done
+```
+
+Check status with `launchctl print gui/$(id -u)/com.gandiva.<name>`.
+
+| Agent | What it does | Trigger |
+|---|---|---|
+| `com.gandiva.scanner` | `daily_run.py` — full scan, then the morning brief | 20:00 daily |
+| `com.gandiva.priceupdater` | `price_updater.py` — prices every 60s, full re-scan every 30 min while a market is open | always on, `KeepAlive` |
+| `com.gandiva.webserver` | `deploy/serve.py` — static server on :8765 with caching disabled | always on, `KeepAlive` |
+
+`KeepAlive` is the important part for the latter two. They were previously
+started by hand, so they died on reboot or when the terminal closed and
+stayed dead silently — which is how the dashboard ended up serving week-old
+data. launchd now restarts them whenever they exit.
+
+## The EX_CONFIG(78) trap
+
+If an agent reports `last exit code = 78: EX_CONFIG` and produces **no output
+at all**, the cause is almost certainly its log files rather than its code.
+
+launchd opens `StandardOutPath` / `StandardErrorPath` itself, before it execs
+the program. A file carrying the `com.apple.macl` extended attribute — macOS
+attaches these when a sandboxed app touches a file under `~/Desktop` — cannot
+be opened by launchd, so the job aborts before running. Nothing is logged,
+because the logging is what failed.
+
+This silently killed the nightly scan between 2026-07-11 and 2026-10-06.
+
+Diagnose:
+
+```sh
+ls -l@ logs/launchd_out.log          # look for com.apple.macl
+xattr -l logs/launchd_out.log
+```
+
+Fix by moving the affected files aside; launchd recreates them clean:
+
+```sh
+mv logs/launchd_out.log logs/launchd_out.log.bak
+launchctl kickstart -k gui/$(id -u)/com.gandiva.scanner
+```
+
+The two new agents write to `/tmp` instead of `~/Desktop` specifically to stay
+out of reach of this attribute.
+
+## Verifying KeepAlive
+
+Kill a process and confirm launchd brings it back:
+
+```sh
+pkill -f serve.py && sleep 10 && curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8765/
+```
+
+A `200` means the agent is doing its job.
