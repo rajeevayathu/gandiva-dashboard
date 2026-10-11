@@ -14,7 +14,7 @@ Check status with `launchctl print gui/$(id -u)/com.gandiva.<name>`.
 
 | Agent | What it does | Trigger |
 |---|---|---|
-| `com.gandiva.scanner` | `daily_run.py` — full scan, then the morning brief | 20:00 daily |
+| `com.gandiva.scanner` | `daily_run.py` — full scan, chart rebuild, then the morning brief | 20:00 daily |
 | `com.gandiva.priceupdater` | `price_updater.py` — prices every 60s, full re-scan every 30 min while a market is open | always on, `KeepAlive` |
 | `com.gandiva.webserver` | `deploy/serve.py` — static server on :8765 with caching disabled | always on, `KeepAlive` |
 
@@ -62,3 +62,17 @@ pkill -f serve.py && sleep 10 && curl -s -o /dev/null -w '%{http_code}\n' http:/
 ```
 
 A `200` means the agent is doing its job.
+
+## Why the nightly run rebuilds charts
+
+`daily_run.py` originally ran only `scanner.py` and `morning_brief.py`. That
+updates `results.json`, but leaves the chart viewer's `india_data.json` and
+`us_data.json` untouched — they are only rebuilt by `generate_charts.py`.
+
+In practice the viewer was rescued by `price_updater.py`, which rebuilds charts
+after each market-hours re-scan. But that loop does nothing when markets are
+closed, so across a weekend the viewer sat three days behind the scanner, with
+every mirrored screen empty while the scanner's own screens were current.
+
+The nightly run now rebuilds charts itself, so the two stay in step regardless
+of whether the market-hours loop ran.
