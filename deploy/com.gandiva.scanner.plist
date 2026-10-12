@@ -6,8 +6,15 @@
   <key>Label</key>
   <string>com.gandiva.scanner</string>
 
+  <!-- caffeinate -i holds off idle sleep for the life of the run.
+       Without it the Mac dozes between maintenance wakes, which suspends both
+       daily_run.py and its child scanner. Wall-clock runs then stretch to 3-4
+       hours, and because Python's monotonic clock does not advance during
+       sleep, the 30-minute step timeout effectively never fires. -->
   <key>ProgramArguments</key>
   <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
     <string>/opt/homebrew/bin/python3.10</string>
     <string>/Users/rajeevsharma/Desktop/example/minervini-trend-template-scanner/daily_run.py</string>
   </array>

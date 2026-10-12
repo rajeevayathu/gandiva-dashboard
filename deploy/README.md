@@ -76,3 +76,40 @@ every mirrored screen empty while the scanner's own screens were current.
 
 The nightly run now rebuilds charts itself, so the two stay in step regardless
 of whether the market-hours loop ran.
+
+## Why the nightly job runs under `caffeinate`
+
+Unattended runs were taking 3-4 hours. The cause was not the scan itself: the
+Mac idle-sleeps between maintenance wakes, which suspends `daily_run.py` and
+its child scanner. Wall-clock time inflates while almost no work happens.
+
+This also silently disables the per-step timeout. Python's `time.monotonic()`
+does not advance while macOS sleeps, so `subprocess.run(timeout=1800)` counts
+only *awake* seconds. On 2026-10-12 a run sat for 81 wall-clock minutes — hung
+on a rate-limited Yahoo socket — without the 30-minute timeout ever firing,
+because barely 30 minutes of awake time had accrued.
+
+`caffeinate -i` holds off idle sleep for the lifetime of the run, so the job
+makes continuous progress and the timeout measures something real.
+
+Diagnose a suspected sleep-stall with:
+
+```sh
+pmset -g log | grep -iE "Entering Sleep|Wake from" | tail
+```
+
+A run spanning hours with repeated `Entering Sleep` entries inside its window
+is this problem, not a slow scan.
+
+### Yahoo rate limiting
+
+Separately, heavy days produce bursts of `Too Many Requests` from Yahoo and the
+scan slows while yfinance retries. The per-request timeouts (10-20s) are in
+place, but the retry loop can still stall a run for a long time. If a scan
+appears frozen, check for an open socket and no cache writes:
+
+```sh
+p=$(pgrep -f scanner.py | head -1)
+lsof -p $p | grep TCP                              # one socket to yahoo
+find .cache -name '*.pkl' -newermt '-2 minutes' | wc -l   # 0 means stalled
+```
