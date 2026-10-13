@@ -393,8 +393,37 @@ def load_symbols(max_syms=None):
     return [s + '.NS' for s in nifty100]
 
 # ── DATA FETCHING & CACHING ───────────────────────────────────────────────────
+# Fetch outcome counters — surfaced at the end of a scan. Failures used to be
+# swallowed by a bare `except: return None`, so a rate-limited run looked
+# identical to a clean one while silently scanning stale data.
+FETCH_STATS = {'fetched': 0, 'cached': 0, 'empty': 0, 'failed': 0,
+               'rate_limited': 0, 'regressed': 0, 'stale_cache': 0}
+
+
 def cache_path(sym):
     return os.path.join(CACHE_DIR, sym.replace('.', '_') + '.pkl')
+
+def _bars_current(df):
+    """Is the newest bar recent enough to treat this cache as usable?
+
+    The mtime TTL alone is not enough: a file rewritten today can still hold
+    last week's bars, and then the TTL keeps trusting it for another 23 hours.
+    That is how the universe sat on Friday's closes for days.
+
+    Three calendar days is the right window: a Friday bar is still the newest
+    completed session on Monday (3 days), but by Tuesday Monday's bar should
+    exist, so it is refetched. Four days would leave Friday data in place
+    through Tuesday — precisely the gap that caused this.
+    """
+    # NB: this module does `from datetime import datetime`, so `datetime` is
+    # the class — datetime.date.today() does not exist here.
+    try:
+        last = df.index[-1]
+        last = last.date() if hasattr(last, 'date') else last
+        return (datetime.now().date() - last).days <= 3
+    except Exception:
+        return False
+
 
 def fetch_data(sym):
     cp = cache_path(sym)
@@ -403,8 +432,11 @@ def fetch_data(sym):
             try:
                 with open(cp, 'rb') as f:
                     df = pickle.load(f)
-                return _patch_today_bar(df, sym)
-            except:
+                if _bars_current(df):
+                    FETCH_STATS['cached'] += 1
+                    return _patch_today_bar(df, sym)
+                FETCH_STATS['stale_cache'] += 1   # fall through and refetch
+            except Exception:
                 pass
     try:
         df = yf.download(sym, period='2y', interval='1d',
@@ -413,15 +445,46 @@ def fetch_data(sym):
         if 'Adj Close' in df.columns:
             df = df.drop(columns=['Adj Close'])
         if df is None or len(df) < 30:
-            return None
+            FETCH_STATS['empty'] += 1
+            return _fallback_cache(cp, sym)
         df = df[['Open', 'High', 'Low', 'Close', 'Volume']].dropna()
         if len(df) < 30:
-            return None
+            FETCH_STATS['empty'] += 1
+            return _fallback_cache(cp, sym)
+        # Never let a truncated response overwrite better data. Under rate
+        # limiting Yahoo returns short series that still pass the len>=30 test;
+        # writing those refreshes the file mtime, so the TTL then trusts stale
+        # bars for 23 hours. Keep whichever series reaches further forward.
+        if os.path.exists(cp):
+            try:
+                with open(cp, 'rb') as f:
+                    old_df = pickle.load(f)
+                if len(old_df) and df.index[-1] < old_df.index[-1]:
+                    FETCH_STATS['regressed'] += 1
+                    return _patch_today_bar(old_df, sym)
+            except Exception:
+                pass
         with open(cp, 'wb') as f:
             pickle.dump(df, f)
+        FETCH_STATS['fetched'] += 1
         return _patch_today_bar(df, sym)
-    except:
-        return None
+    except Exception as e:
+        FETCH_STATS['failed'] += 1
+        if 'rate' in str(e).lower() or 'too many' in str(e).lower():
+            FETCH_STATS['rate_limited'] += 1
+        return _fallback_cache(cp, sym)
+
+
+def _fallback_cache(cp, sym):
+    """Use whatever is cached when a live fetch fails, rather than dropping
+    the stock entirely. Returning None silently removed it from every screen."""
+    if os.path.exists(cp):
+        try:
+            with open(cp, 'rb') as f:
+                return _patch_today_bar(pickle.load(f), sym)
+        except Exception:
+            pass
+    return None
 
 
 def _patch_today_bar(df, sym):
@@ -1879,7 +1942,7 @@ def fetch_quarterly_financials(syms):
     if to_fetch:
         print(f"  Fetching quarterly results (yfinance) for {len(to_fetch)} stocks...", flush=True)
         done_count = [0]
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
             futures = {ex.submit(_fetch_one_qfin, sym): sym for sym in to_fetch}
             for fut in concurrent.futures.as_completed(futures):
                 sym, data = fut.result()
@@ -2256,7 +2319,7 @@ def compute_bhavcopy_breadth():
     BATCH = 30
     for bi in range(0, len(pending), BATCH):
         batch = pending[bi:bi + BATCH]
-        with ThreadPoolExecutor(max_workers=10) as ex:
+        with ThreadPoolExecutor(max_workers=5) as ex:
             futs = {ex.submit(_fetch_bhav, d): d for d in batch}
             for fut in as_completed(futs):
                 d   = futs[fut]
@@ -4697,6 +4760,57 @@ def run():
     print(f"    {screens['ipo_watch']['label']:<45} {len(screens['ipo_watch']['stocks'])} stocks")
     print(f"\n  STRONG EARNINGS + CCI:")
     print(f"    {screens['strong_earnings']['label']:<45} {len(screens['strong_earnings']['stocks'])} stocks")
+    # ── Data-quality report ───────────────────────────────────────────────
+    # A run with stale bars still produces screens; it just builds them from
+    # old prices. Print the evidence so that is never invisible again.
+    #
+    # Two things make a naive count misleading: the cache accumulates files for
+    # delisted tickers that will never update again, and the newest bar found
+    # anywhere is not the newest bar that SHOULD exist (large caps post before
+    # small caps). So measure only tickers in the live universe, against the
+    # most common last-bar date rather than the maximum.
+    try:
+        import collections as _coll, pickle as _pk
+        _uni = {x.replace('.NS', '') for x in symbols}
+        _last, _orphan = _coll.Counter(), 0
+        for _f in os.listdir(CACHE_DIR):
+            if not _f.endswith('.pkl') or _f.startswith('_'):
+                continue
+            _t = _f[:-4].replace('_NS', '')
+            try:
+                with open(os.path.join(CACHE_DIR, _f), 'rb') as _fh:
+                    _d = _pk.load(_fh)
+                _dt = _d.index[-1].date()
+            except Exception:
+                continue
+            if _t in _uni:
+                _last[str(_dt)] += 1
+            else:
+                _orphan += 1
+
+        print(f"\n  DATA QUALITY:")
+        print(f"    fetched {FETCH_STATS['fetched']}  cached {FETCH_STATS['cached']}  "
+              f"failed {FETCH_STATS['failed']}  rate-limited {FETCH_STATS['rate_limited']}  "
+              f"stale-cache-refetched {FETCH_STATS['stale_cache']}  "
+              f"stale-response-rejected {FETCH_STATS['regressed']}")
+        if _last:
+            _total = sum(_last.values())
+            _mode, _mode_n = _last.most_common(1)[0]
+            _current = sum(n for d, n in _last.items() if d >= _mode)
+            _pct = _current / _total * 100
+            print(f"    universe {_total} tickers ({_orphan} delisted cache files ignored)")
+            print(f"    latest session in cache: {_mode}  —  {_current}/{_total} "
+                  f"({_pct:.0f}%) at or after it")
+            if _pct < 90:
+                _behind = sorted((d for d in _last if d < _mode), reverse=True)[:3]
+                print(f"    *** WARNING: {100 - _pct:.0f}% of the universe is behind {_mode}.")
+                print(f"    *** oldest groups: " +
+                      ", ".join(f"{d} ({_last[d]})" for d in _behind))
+                print(f"    *** high 'failed'/'rate-limited' means Yahoo throttling; "
+                      f"high 'cached' means the TTL served stale files.")
+    except Exception as _e:
+        print(f"  (data-quality report unavailable: {_e})")
+
     print(f"\n  NEAR HIGH & MA:")
     print(f"    {screens['high_ma20']['label']:<45} {len(screens['high_ma20']['stocks'])} stocks")
     print(f"    {screens['high_ma50']['label']:<45} {len(screens['high_ma50']['stocks'])} stocks")
