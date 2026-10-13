@@ -1,31 +1,43 @@
-# ── Generated scan output (rebuilt on every run) ──────────────────────────────
+# Secrets — never commit
+.env
+telegram_chat_id.json
+
+# Large generated data — too big for git
+rag_db/
 results.json
-results.js
-results_embed.js
 results_us.json
+results_embed.js
 results_us_embed.js
 breadth.json
 breadth_embed.js
+cci_history.json
 cci_history_embed.js
+screen_history.json
+scan_history.jsonl
 prev_screens.json
+rag_meta.json
 
-# ── Price data cache (hundreds of MB, rebuilt automatically) ──────────────────
-.cache/
-
-# ── Export downloads ───────────────────────────────────────────────────────────
+# Exports and logs
 exports/
+logs/
 
-# ── Python ────────────────────────────────────────────────────────────────────
+# Python
 __pycache__/
 *.py[cod]
-*.pyo
+*.egg-info/
 .venv/
 venv/
-env/
 
-# ── macOS ─────────────────────────────────────────────────────────────────────
+# macOS
 .DS_Store
 
-# ── Keep small historical data files ─────────────────────────────────────────
-# cci_history.json  ← tracked (historical CCI trend data, small)
-# screen_history.json ← tracked
+# Docker volumes (Langfuse data)
+langfuse/pgdata/
+
+# ATH live signals (runtime generated)
+ath_live_signals.json
+ath_signals_embed.js
+
+# Stock price cache
+.cache/
+.cache_us/

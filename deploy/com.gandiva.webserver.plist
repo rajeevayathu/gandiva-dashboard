@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.gandiva.webserver</string>
+
+  <!-- Static server on :8765 with caching disabled, so the browser can never
+       serve a stale results_embed.js or dashboard.html. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/python3.10</string>
+    <string>/Users/rajeevsharma/Desktop/example/minervini-trend-template-scanner/deploy/serve.py</string>
+  </array>
+
+  <key>WorkingDirectory</key><string>/Users/rajeevsharma/Desktop/example</string>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+
+  <key>StandardOutPath</key><string>/tmp/gandiva_webserver.out.log</string>
+  <key>StandardErrorPath</key><string>/tmp/gandiva_webserver.err.log</string>
+</dict>
+</plist>

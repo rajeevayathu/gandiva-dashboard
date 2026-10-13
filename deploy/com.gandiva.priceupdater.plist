@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.gandiva.priceupdater</string>
+
+  <!-- Live price loop (60s) + full re-scan loop (30 min) while markets are open. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/python3.10</string>
+    <string>/Users/rajeevsharma/Desktop/example/chart-pattern-viewer/price_updater.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/rajeevsharma/Desktop/example/chart-pattern-viewer</string>
+
+  <!-- The daemon used to be started by hand, so it died on reboot and stayed
+       dead silently. KeepAlive makes launchd restart it whenever it exits. -->
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+
+  <!-- Logs live under /tmp deliberately: files on ~/Desktop can pick up a
+       com.apple.macl xattr, which locks launchd out of them and makes the
+       job fail with EX_CONFIG(78) before it ever starts. -->
+  <key>StandardOutPath</key><string>/tmp/gandiva_priceupdater.out.log</string>
+  <key>StandardErrorPath</key><string>/tmp/gandiva_priceupdater.err.log</string>
+</dict>
+</plist>

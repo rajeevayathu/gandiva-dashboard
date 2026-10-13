@@ -1,0 +1,433 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   GANDIVA — Design System
+   "Precision Instrument": paper ground, achromatic selection, hue = data.
+   Single source of truth for index.html, dashboard.html, chart_viewer.html.
+
+   Light is the shipped theme. The graphite palette is retained verbatim
+   under [data-theme="dark"], so the whole app flips by setting one
+   attribute on <html> — nothing downstream needs to change.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* ── GROUND & ELEVATION ────────────────────────────────────────────────
+     In daylight the ladder runs the other way: the page is a soft grey
+     and elevation means *lighter*, so cards lift off the ground as white. */
+  --g-ground:    #F3F5F7;   /* app background                               */
+  --g-raise-1:   #FFFFFF;   /* sidebars, rails, sticky bars                 */
+  --g-raise-2:   #FFFFFF;   /* cards, panels                                */
+  --g-raise-3:   #EDF0F3;   /* hover, inset wells, nested tiles             */
+  --g-raise-4:   #E0E5EA;   /* active/selected fill, modal chrome           */
+
+  /* ── HAIRLINES ─────────────────────────────────────────────────────────
+     Alpha-based so they sit correctly on any elevation.                    */
+  --g-line:      rgba(16,24,32,.095);
+  --g-line-2:    rgba(16,24,32,.155);
+  --g-line-3:    rgba(16,24,32,.28);
+
+  /* ── TEXT ──────────────────────────────────────────────────────────────
+     Cool-neutral, a few degrees toward blue so it sits with the ground.    */
+  --g-text:      #12171D;   /* primary — headings, values                   */
+  --g-text-2:    #47525F;   /* secondary — labels, nav rest state           */
+  --g-text-3:    #6A7582;   /* tertiary — captions, section headers         */
+  --g-text-4:    #97A1AC;   /* quaternary — disabled, separators            */
+
+  /* ── BRAND ─────────────────────────────────────────────────────────────
+     Brass, dropped in value so it holds against white. Used for the mark
+     and almost nothing else — scarcity is what makes it read as expensive. */
+  --g-brass:     #9A7B28;
+  --g-brass-hi:  #B8963E;
+  --g-brass-dim: rgba(154,123,40,.11);
+
+  /* ── SEMANTIC — reserved strictly for data meaning ─────────────────────
+     Darkened for legibility on paper; still desaturated, never poster.     */
+  --g-up:        #1E7A52;
+  --g-up-hi:     #17603F;
+  --g-up-dim:    rgba(30,122,82,.10);
+  --g-up-line:   rgba(30,122,82,.30);
+
+  --g-down:      #B4392E;
+  --g-down-hi:   #932C23;
+  --g-down-dim:  rgba(180,57,46,.09);
+  --g-down-line: rgba(180,57,46,.28);
+
+  --g-warn:      #8F6212;
+  --g-warn-hi:   #74500E;
+  --g-warn-dim:  rgba(143,98,18,.10);
+  --g-warn-line: rgba(143,98,18,.28);
+
+  --g-info:      #2C5E92;
+  --g-info-hi:   #224B77;
+  --g-info-dim:  rgba(44,94,146,.09);
+  --g-info-line: rgba(44,94,146,.26);
+
+  /* ── SELECTION — achromatic by design ──────────────────────────────────
+     Nav state carries NO hue. This is what kills the rainbow and gives
+     the hues back their meaning. On paper the fill darkens instead of
+     lightening, but the language is identical.                            */
+  --g-sel-fill:  rgba(16,24,32,.062);
+  --g-sel-rule:  #12171D;
+  --g-sel-text:  #0A0E13;
+
+  /* ── SURFACE TREATMENTS ────────────────────────────────────────────────
+     Named so every hover, well and chip flips with the theme. Writing
+     these as raw rgba(255,255,255,…) is what locks a design to one mode. */
+  --g-hover:     rgba(16,24,32,.045);   /* row / nav hover                */
+  --g-hover-2:   rgba(16,24,32,.065);   /* stronger hover                 */
+  --g-well:      rgba(16,24,32,.045);   /* recessed input & segment track */
+  --g-chip:      rgba(16,24,32,.06);    /* neutral count pill             */
+  --g-chip-on:   rgba(16,24,32,.12);    /* count pill, selected row       */
+  --g-spec:      rgba(255,255,255,.9);  /* specular top edge on cards     */
+  /* Selection sweep used on nav rows — a gradient that falls away right. */
+  --g-sel-sweep: linear-gradient(90deg, rgba(16,24,32,.085), rgba(16,24,32,.02) 72%, transparent);
+  /* Frosted pane fills for the sidebar / chart rail. */
+  --g-pane:      linear-gradient(180deg, rgba(255,255,255,.92), rgba(252,253,254,.92));
+  --g-scrim:     rgba(28,36,46,.42);    /* modal backdrop                 */
+
+  /* ── TYPE ──────────────────────────────────────────────────────────────  */
+  --g-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --g-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* 7-step scale. Every size in the app resolves to one of these.          */
+  --g-t-10: 10px;   /* micro labels, uppercase eyebrows   */
+  --g-t-11: 11px;   /* dense table cells, badges          */
+  --g-t-12: 12px;   /* nav items, secondary UI            */
+  --g-t-13: 13px;   /* body default                       */
+  --g-t-15: 15px;   /* card titles, tickers               */
+  --g-t-18: 18px;   /* panel headings                     */
+  --g-t-24: 24px;   /* modal titles, hero figures         */
+
+  --g-w-regular: 400;
+  --g-w-medium:  500;
+  --g-w-semi:    600;
+  --g-w-bold:    700;
+
+  /* Uppercase eyebrow tracking — tight sizes need loose letter-spacing.    */
+  --g-track-eyebrow: .085em;
+  --g-track-mono:    .01em;
+
+  /* ── RADII — four values, no improvisation ─────────────────────────────  */
+  --g-r-sm:  4px;   /* chips, small controls  */
+  --g-r-md:  6px;   /* inputs, buttons        */
+  --g-r-lg:  10px;  /* cards, panels          */
+  --g-r-xl:  14px;  /* modals                 */
+  --g-r-pill: 999px;
+
+  /* ── ELEVATION — true shadow, never a neon glow ────────────────────────
+     Daylight shadows are tighter and far softer; a dark-theme shadow on
+     paper reads as dirt.                                                  */
+  --g-sh-1: 0 1px 2px rgba(16,24,32,.07);
+  --g-sh-2: 0 2px 8px rgba(16,24,32,.09);
+  --g-sh-3: 0 8px 24px rgba(16,24,32,.11);
+  --g-sh-4: 0 24px 56px rgba(16,24,32,.17);
+
+  /* ── MOTION ────────────────────────────────────────────────────────────
+     Three curves. `glide` is the signature — a long, slightly overshooting
+     ease that makes panels feel weighted rather than snapped.             */
+  --g-fast:  120ms cubic-bezier(.4,0,.2,1);
+  --g-base:  200ms cubic-bezier(.32,.72,0,1);
+  --g-glide: 420ms cubic-bezier(.22,1,.36,1);
+  --g-ease:  cubic-bezier(.22,1,.36,1);
+
+  /* ── ATMOSPHERE ────────────────────────────────────────────────────────
+     The ground is not a flat fill. Two very low-contrast radials give the
+     surface depth, so panels feel lit rather than pasted on. Kept under
+     5% opacity — felt, not seen.                                          */
+  --g-atmos:
+    radial-gradient(1200px 680px at 12% -8%,  rgba(154,123,40,.05),  transparent 62%),
+    radial-gradient(1000px 620px at 92% 108%, rgba(44,94,146,.045), transparent 60%);
+
+  /* Translucent chrome. Sticky bars let the content ghost through instead
+     of sitting on an opaque slab — this is what reads as "seamless".      */
+  --g-glass:      rgba(255,255,255,.76);
+  --g-glass-deep: rgba(248,250,251,.90);
+  --g-blur: saturate(160%) blur(18px);
+
+  /* Hairlines that fade at their ends, so panes dissolve into each other
+     rather than being boxed by hard rules. */
+  --g-fade-x: linear-gradient(90deg, transparent, var(--g-line-2) 18%, var(--g-line-2) 82%, transparent);
+  --g-fade-y: linear-gradient(180deg, transparent, var(--g-line-2) 14%, var(--g-line-2) 86%, transparent);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DARK THEME — the graphite palette, retained.
+   Set data-theme="dark" on <html> to flip the entire app back. Only the
+   token values change; every rule downstream is written against the tokens
+   and needs no edit.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root[data-theme="dark"]{
+  --g-ground:    #0B0D10;
+  --g-raise-1:   #101318;
+  --g-raise-2:   #151920;
+  --g-raise-3:   #1B2028;
+  --g-raise-4:   #232933;
+
+  --g-line:      rgba(255,255,255,.065);
+  --g-line-2:    rgba(255,255,255,.11);
+  --g-line-3:    rgba(255,255,255,.18);
+
+  --g-text:      #E8EBEF;
+  --g-text-2:    #99A2AE;
+  --g-text-3:    #626C79;
+  --g-text-4:    #414A55;
+
+  --g-brass:     #C4A052;
+  --g-brass-hi:  #DCBB6E;
+  --g-brass-dim: rgba(196,160,82,.13);
+
+  --g-up:        #3FA67A;
+  --g-up-hi:     #56C494;
+  --g-up-dim:    rgba(63,166,122,.12);
+  --g-up-line:   rgba(63,166,122,.30);
+
+  --g-down:      #CC5A4E;
+  --g-down-hi:   #E07468;
+  --g-down-dim:  rgba(204,90,78,.12);
+  --g-down-line: rgba(204,90,78,.30);
+
+  --g-warn:      #C08A2E;
+  --g-warn-hi:   #D9A448;
+  --g-warn-dim:  rgba(192,138,46,.12);
+  --g-warn-line: rgba(192,138,46,.28);
+
+  --g-info:      #5B8FC7;
+  --g-info-hi:   #7BA9DB;
+  --g-info-dim:  rgba(91,143,199,.12);
+  --g-info-line: rgba(91,143,199,.28);
+
+  --g-sel-fill:  rgba(255,255,255,.055);
+  --g-sel-rule:  #E8EBEF;
+  --g-sel-text:  #F2F5F8;
+
+  --g-hover:     rgba(255,255,255,.035);
+  --g-hover-2:   rgba(255,255,255,.055);
+  --g-well:      rgba(0,0,0,.28);
+  --g-chip:      rgba(255,255,255,.06);
+  --g-chip-on:   rgba(255,255,255,.11);
+  --g-spec:      rgba(255,255,255,.14);
+  --g-sel-sweep: linear-gradient(90deg, rgba(255,255,255,.085), rgba(255,255,255,.015) 72%, transparent);
+  --g-pane:      linear-gradient(180deg, rgba(19,23,29,.86), rgba(14,17,21,.86));
+  --g-scrim:     rgba(6,8,11,.78);
+
+  --g-sh-1: 0 1px 2px rgba(0,0,0,.40);
+  --g-sh-2: 0 2px 8px rgba(0,0,0,.45);
+  --g-sh-3: 0 8px 28px rgba(0,0,0,.55);
+  --g-sh-4: 0 24px 64px rgba(0,0,0,.65);
+
+  --g-atmos:
+    radial-gradient(1200px 680px at 12% -8%,  rgba(196,160,82,.055), transparent 62%),
+    radial-gradient(1000px 620px at 92% 108%, rgba(91,143,199,.045), transparent 60%);
+
+  --g-glass:      rgba(16,19,24,.72);
+  --g-glass-deep: rgba(11,13,16,.82);
+
+  /* ── SPACING ───────────────────────────────────────────────────────────  */
+  --g-sp-1: 4px;  --g-sp-2: 8px;  --g-sp-3: 12px;
+  --g-sp-4: 16px; --g-sp-5: 24px; --g-sp-6: 32px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BASE
+   ══════════════════════════════════════════════════════════════════════════ */
+*{ box-sizing:border-box; margin:0; padding:0; }
+
+body{
+  background: var(--g-ground);
+  background-image: var(--g-atmos);
+  background-attachment: fixed;
+  color: var(--g-text);
+  font-family: var(--g-sans);
+  font-size: var(--g-t-13);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv05' 1, 'ss01' 1;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ENTRANCE — content arrives, it does not blink into place.
+   ══════════════════════════════════════════════════════════════════════════ */
+@keyframes g-rise{
+  from{ opacity:0; transform: translateY(6px); }
+  to  { opacity:1; transform: none; }
+}
+@keyframes g-fade{ from{ opacity:0 } to{ opacity:1 } }
+
+.g-enter{ animation: g-rise var(--g-glide) both; }
+
+/* Staggered reveal for lists and grids — the cascade is what makes a
+   screen change feel composed instead of abrupt. Capped at 12 so long
+   tables never crawl. */
+.g-stagger > *{ animation: g-rise 340ms var(--g-ease) both; }
+.g-stagger > *:nth-child(1){ animation-delay: 0ms }
+.g-stagger > *:nth-child(2){ animation-delay: 22ms }
+.g-stagger > *:nth-child(3){ animation-delay: 44ms }
+.g-stagger > *:nth-child(4){ animation-delay: 66ms }
+.g-stagger > *:nth-child(5){ animation-delay: 88ms }
+.g-stagger > *:nth-child(6){ animation-delay: 110ms }
+.g-stagger > *:nth-child(7){ animation-delay: 132ms }
+.g-stagger > *:nth-child(8){ animation-delay: 154ms }
+.g-stagger > *:nth-child(9){ animation-delay: 176ms }
+.g-stagger > *:nth-child(10){ animation-delay: 198ms }
+.g-stagger > *:nth-child(11){ animation-delay: 220ms }
+.g-stagger > *:nth-child(n+12){ animation-delay: 240ms }
+
+/* Sticky chrome that the content ghosts through. */
+.g-glass{
+  background: var(--g-glass);
+  -webkit-backdrop-filter: var(--g-blur);
+  backdrop-filter: var(--g-blur);
+}
+
+/* Every figure in the app aligns in its column. */
+.g-num, .g-mono{
+  font-family: var(--g-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--g-track-mono);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCROLLBARS — thin, achromatic, appear on hover of their container
+   ══════════════════════════════════════════════════════════════════════════ */
+*{ scrollbar-width: thin; scrollbar-color: var(--g-line-2) transparent; }
+
+::-webkit-scrollbar{ width:9px; height:9px; }
+::-webkit-scrollbar-track{ background: transparent; }
+::-webkit-scrollbar-thumb{
+  background: var(--g-line-2);
+  border-radius: var(--g-r-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background var(--g-base);
+}
+::-webkit-scrollbar-thumb:hover{
+  background: var(--g-line-3);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner{ background: transparent; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FOCUS — visible, achromatic, never removed
+   ══════════════════════════════════════════════════════════════════════════ */
+:focus-visible{
+  outline: 2px solid var(--g-sel-rule);
+  outline-offset: 2px;
+  border-radius: var(--g-r-sm);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PRIMITIVES
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Uppercase section label — the workhorse for grouping dense lists. */
+.g-eyebrow{
+  font-size: var(--g-t-10);
+  font-weight: var(--g-w-semi);
+  color: var(--g-text-3);
+  text-transform: uppercase;
+  letter-spacing: var(--g-track-eyebrow);
+}
+
+/* Nav row. Selection is a fill + a rule + brighter text. No hue. */
+.g-nav-item{
+  display:flex; align-items:center; justify-content:space-between; gap:var(--g-sp-2);
+  width:100%; padding:7px 14px 7px 13px;
+  background:none; border:none;
+  border-left:2px solid transparent;
+  color: var(--g-text-2);
+  font-family: var(--g-sans);
+  font-size: var(--g-t-12);
+  font-weight: var(--g-w-medium);
+  text-align:left; cursor:pointer;
+  transition: background var(--g-fast), color var(--g-fast), border-color var(--g-fast);
+}
+.g-nav-item:hover{ background: rgba(255,255,255,.035); color: var(--g-text); }
+.g-nav-item.active{
+  background: var(--g-sel-fill);
+  border-left-color: var(--g-sel-rule);
+  color: var(--g-sel-text);
+  font-weight: var(--g-w-semi);
+}
+
+/* Count pill riding on a nav row. */
+.g-count{
+  font-family: var(--g-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--g-t-11);
+  font-weight: var(--g-w-medium);
+  padding:1px 7px; border-radius: var(--g-r-pill);
+  background: rgba(255,255,255,.06);
+  color: var(--g-text-3);
+  min-width:24px; text-align:center; flex-shrink:0;
+  transition: background var(--g-fast), color var(--g-fast);
+}
+.g-nav-item.active .g-count{ background: rgba(255,255,255,.11); color: var(--g-text); }
+
+/* Card. */
+.g-card{
+  background: var(--g-raise-2);
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-r-lg);
+  box-shadow: var(--g-sh-1);
+  transition: border-color var(--g-base), box-shadow var(--g-base), transform var(--g-base);
+}
+.g-card:hover{
+  border-color: var(--g-line-2);
+  box-shadow: var(--g-sh-3);
+  transform: translateY(-1px);
+}
+
+/* Input. */
+.g-input{
+  background: var(--g-ground);
+  border: 1px solid var(--g-line);
+  border-radius: var(--g-r-md);
+  color: var(--g-text);
+  font-family: var(--g-sans);
+  font-size: var(--g-t-12);
+  padding: 6px 10px;
+  transition: border-color var(--g-fast), background var(--g-fast);
+}
+.g-input::placeholder{ color: var(--g-text-4); }
+.g-input:focus{
+  outline: none;
+  border-color: var(--g-line-3);
+  background: var(--g-raise-2);
+}
+
+/* Value chips that carry data meaning. */
+.g-tag{
+  display:inline-flex; align-items:center; gap:5px;
+  font-family: var(--g-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--g-t-11);
+  font-weight: var(--g-w-medium);
+  padding: 2px 8px;
+  border-radius: var(--g-r-sm);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.g-tag.up  { background:var(--g-up-dim);   color:var(--g-up-hi);   border-color:var(--g-up-line); }
+.g-tag.down{ background:var(--g-down-dim); color:var(--g-down-hi); border-color:var(--g-down-line); }
+.g-tag.warn{ background:var(--g-warn-dim); color:var(--g-warn-hi); border-color:var(--g-warn-line); }
+.g-tag.info{ background:var(--g-info-dim); color:var(--g-info-hi); border-color:var(--g-info-line); }
+.g-tag.mute{ background:rgba(255,255,255,.05); color:var(--g-text-3); border-color:var(--g-line); }
+
+/* Live status dot — a slow breath, not a strobe. */
+.g-dot{
+  width:6px; height:6px; border-radius:50%;
+  background: var(--g-text-4); flex-shrink:0;
+  transition: background var(--g-base);
+}
+.g-dot.live{ background: var(--g-up); animation: g-breathe 2.4s ease-in-out infinite; }
+@keyframes g-breathe{ 0%,100%{opacity:1} 50%{opacity:.35} }
+
+/* Wide content never scrolls the page sideways. */
+.g-scroll-x{ overflow-x:auto; }
+
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+  }
+}
